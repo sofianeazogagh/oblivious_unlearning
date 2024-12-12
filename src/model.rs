@@ -58,7 +58,7 @@ impl Tree {
     }
 
     #[allow(dead_code)]
-    pub fn generate_random_tree(depth: u64, n_classes: u64, ctx: &Context) -> Self {
+    pub fn generate_random_tree(depth: u64, n_classes: u64, f: u64, ctx: &Context) -> Self {
         let mut tree = Self::new();
         tree.depth = depth;
         tree.n_classes = n_classes;
@@ -78,7 +78,7 @@ impl Tree {
             for _ in 0..num_nodes {
                 stage.push(InternalNode {
                     threshold: rand::random::<u64>() % ctx.full_message_modulus() as u64,
-                    feature_index: rand::random::<u64>() % ctx.full_message_modulus() as u64,
+                    feature_index: rand::random::<u64>() % f,
                 });
             }
             tree.nodes.push(stage);
