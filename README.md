@@ -32,16 +32,3 @@ cargo build
 ```
 
 ## Usage
-
-The main file contain the following parameters
-
-- ``depth`` corresponding to the depth of the tree
-- ``bit_precision`` corresponding to the bit precision you want
-
-Then, a call to the function ``probonite`` is made with those parameters. A random tree will be generated according to the chosen parameters, and the evaluation of the tree will be performed.
-
-
-To run the project, don't forget to use the ``--release`` flag :
-```
-cargo run --release
-```
