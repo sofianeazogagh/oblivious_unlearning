@@ -1,0 +1,92 @@
+{
+  "depth": 3,
+  "leaves": [
+    {
+      "counts": [
+        0,
+        0
+      ],
+      "type": "leaf"
+    },
+    {
+      "counts": [
+        0,
+        0
+      ],
+      "type": "leaf"
+    },
+    {
+      "counts": [
+        0,
+        0
+      ],
+      "type": "leaf"
+    },
+    {
+      "counts": [
+        0,
+        0
+      ],
+      "type": "leaf"
+    },
+    {
+      "counts": [
+        0,
+        0
+      ],
+      "type": "leaf"
+    },
+    {
+      "counts": [
+        0,
+        0
+      ],
+      "type": "leaf"
+    },
+    {
+      "counts": [
+        0,
+        0
+      ],
+      "type": "leaf"
+    },
+    {
+      "counts": [
+        0,
+        0
+      ],
+      "type": "leaf"
+    }
+  ],
+  "n_classes": 2,
+  "nodes": [
+    {
+      "feature_index": 4,
+      "threshold": 0
+    },
+    {
+      "feature_index": 1,
+      "threshold": 1
+    },
+    {
+      "feature_index": 2,
+      "threshold": 0
+    },
+    {
+      "feature_index": 0,
+      "threshold": 0
+    },
+    {
+      "feature_index": 6,
+      "threshold": 6
+    },
+    {
+      "feature_index": 7,
+      "threshold": 7
+    }
+  ],
+  "root": {
+    "feature_index": 6,
+    "threshold": 1
+  }
+}
