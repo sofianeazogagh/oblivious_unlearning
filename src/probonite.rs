@@ -42,12 +42,10 @@ pub fn next_accumulators(
     let not_selector_bit = public_key.not_lwe(selector_bit, ctx);
     let mut nexts_accumulators = Vec::new();
     accumulators.iter().for_each(|lwe| {
-        let mut accumulator_right = public_key.lwe_mul_encrypted_bit(lwe, selector_bit, ctx);
-        let mut accumulator_left = public_key.lwe_mul_encrypted_bit(lwe, &not_selector_bit, ctx);
-        public_key.bootstrap_lwe(&mut accumulator_right, ctx);
-        public_key.bootstrap_lwe(&mut accumulator_left, ctx);
-        nexts_accumulators.push(accumulator_right);
+        let accumulator_left = public_key.lwe_mul_encrypted_bit(lwe, &not_selector_bit, ctx);
+        let accumulator_right = public_key.lwe_mul_encrypted_bit(lwe, selector_bit, ctx);
         nexts_accumulators.push(accumulator_left);
+        nexts_accumulators.push(accumulator_right);
     });
 
     nexts_accumulators

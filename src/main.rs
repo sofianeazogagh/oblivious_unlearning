@@ -18,7 +18,7 @@ fn main() {
 
     let mut tree: Tree;
     let tree_depth = 3;
-    let n_classes = 3;
+    let n_classes = 2;
 
     if GENERATE_TREE {
         tree = Tree::generate_random_tree(tree_depth, n_classes, &ctx);
@@ -34,7 +34,7 @@ fn main() {
         .unwrap();
     }
 
-    let feature_vector = vec![1, 1, 1, 1, 1, 1, 1, 1];
+    let feature_vector = vec![1, 0, 1, 1, 1, 1, 0, 1];
     let class = 1;
 
     let query = Query::make_query(&feature_vector, &class, &private_key, &mut ctx);
