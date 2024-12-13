@@ -112,6 +112,37 @@ impl ClearTree {
             leaf.label = max_index as u64;
         }
     }
+
+    pub fn infer_label(&self, record: Vec<u64>)-> u64 {
+        
+        let mut current_node = &InternalNode {
+            id: 0,
+            threshold: 0,
+            feature_index: 0,
+        };
+
+        if self.root.threshold <= record[self.root.feature_index as usize] {
+            current_node = &self.nodes[0][0];
+        } else {
+            current_node = &self.nodes[0][1];
+        }
+
+        for idx in 1..self.depth - 1 {
+            if current_node.threshold <= record[current_node.feature_index as usize] {
+                current_node = &self.nodes[idx as usize][2 * current_node.id as usize];
+            } else {
+                current_node = &self.nodes[idx as usize][2 * current_node.id as usize + 1];
+            }
+        }
+
+        let selected_leaf = if current_node.threshold <= record[current_node.feature_index as usize] {
+            &self.leaves[2 * current_node.id as usize]
+        } else {
+            &self.leaves[2 * current_node.id as usize + 1]
+        };
+
+        selected_leaf.label
+    }
     
     pub fn print_tree(&self) {
         print!("---------- (t,f) ----------\n");
@@ -172,7 +203,7 @@ impl ClearDataset {
             column_domains.push((min, max));
         }
 
-        let f = column_domains.len() as u64;
+        let f = column_domains.len() as u64 - 1;
 
         Self {
             records,
@@ -180,6 +211,44 @@ impl ClearDataset {
             f,
             n,
         }
+    }
+
+    pub fn split(&self, train: f64) -> (ClearDataset, ClearDataset) {
+        let mut rng = rand::thread_rng();
+        let n = self.records.len();
+        let n_train = (train * n as f64) as u64;
+        let mut train_indices = Vec::new();
+        let mut test_indices = Vec::new();
+        for _ in 0..n_train {
+            let idx = rng.gen_range(0..n);
+            train_indices.push(idx);
+        }
+        for i in 0..n {
+            if !train_indices.contains(&i) {
+                test_indices.push(i);
+            }
+        }
+        let mut train_records = Vec::new();
+        let mut test_records = Vec::new();
+        for idx in train_indices {
+            train_records.push(self.records[idx].clone());
+        }
+        for idx in test_indices {
+            test_records.push(self.records[idx].clone());
+        }
+        let train_dataset = ClearDataset {
+            records: train_records,
+            column_domains: self.column_domains.clone(),
+            f: self.f,
+            n: n_train,
+        };
+        let test_dataset = ClearDataset {
+            records: test_records,
+            column_domains: self.column_domains.clone(),
+            f: self.f,
+            n: n as u64 - n_train,
+        };
+        (train_dataset, test_dataset)
     }
 }
 
@@ -193,7 +262,6 @@ pub fn generate_clear_random_tree(depth: u64, n_classes: u64, column_domains: Ve
     // the feature index should be selected among the possible feature indices
     tree.root.feature_index =  rng.gen_range(0..f);
     let mut feature_domain = column_domains[tree.root.feature_index as usize];
-    // print!("{:?}", feature_domain);
 
     tree.root.threshold = rng.gen_range(feature_domain.0..feature_domain.1);
 
@@ -221,6 +289,8 @@ pub fn generate_clear_random_tree(depth: u64, n_classes: u64, column_domains: Ve
 
     tree
 }
+
+
 
 
 
