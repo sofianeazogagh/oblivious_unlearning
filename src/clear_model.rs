@@ -122,10 +122,10 @@ impl ClearTree {
             }
             println!();
         }
+        print!("\n---------([c0, c1, ..., cn], label)-----------\n");
         for leaf in &self.leaves {
             leaf.print(self.n_classes);
         }
-        print!("\n")
     }
 }
 

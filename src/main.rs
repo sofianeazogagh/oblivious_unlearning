@@ -9,9 +9,13 @@ use model::*;
 mod dataset;
 use dataset::*;
 
+mod clear_model;
+use clear_model::*;
+
 use rayon::{iter::{IntoParallelIterator, ParallelIterator}, vec};
 use revolut::{key, Context};
 use tfhe::shortint::parameters::*;
+
 
 const GENERATE_TREE: bool = true;
 
@@ -52,7 +56,7 @@ fn update() {
     tree.print_tree(&private_key, &ctx);
 }
 
-fn main() {
+fn example_private_training() {
     let mut ctx = Context::from(PARAM_MESSAGE_2_CARRY_0);
     let private_key = key(ctx.parameters());
     let public_key = &private_key.public_key;
@@ -88,4 +92,27 @@ fn main() {
     let end = Instant::now() - start;
     println!("Time taken for building the forest : {:?}", end);
     
+}
+
+
+fn example_clear_training() {
+
+    let mut clear_dataset = ClearDataset::from_file(
+    "data/iris_2bits.csv".to_string());
+    let column_domains = clear_dataset.column_domains;
+    let n_classes = column_domains[column_domains.len()-1].1 + 1;
+
+    let mut clear_tree = generate_clear_random_tree(3, n_classes, column_domains, clear_dataset.f);
+
+    for record in clear_dataset.records {
+        clear_tree.update_statistic(record);
+    }
+
+    clear_tree.assign_label_to_leafs();
+    clear_tree.print_tree();
+
+}
+
+fn main() {
+    example_clear_training();
 }
