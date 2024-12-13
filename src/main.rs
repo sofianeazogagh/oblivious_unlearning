@@ -18,7 +18,7 @@ use revolut::{key, Context};
 use tfhe::shortint::parameters::*;
 
 const GENERATE_TREE: bool = false;
-
+const EXPORT_FOREST: bool = true;
 fn update() {
     let mut ctx = Context::from(PARAM_MESSAGE_3_CARRY_0);
     let private_key = key(ctx.parameters());
@@ -57,12 +57,14 @@ fn update() {
 }
 
 fn example_private_training() {
-    let mut ctx = Context::from(PARAM_MESSAGE_2_CARRY_0);
+    let mut ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
     let private_key = key(ctx.parameters());
     let public_key = &private_key.public_key;
 
+    // let dataset =
+    //     EncryptedDataset::from_file("data/iris_2bits.csv".to_string(), &private_key, &mut ctx);
     let dataset =
-        EncryptedDataset::from_file("data/iris_2bits.csv".to_string(), &private_key, &mut ctx);
+        EncryptedDataset::from_file("data/wine_4bits.csv".to_string(), &private_key, &mut ctx);
 
     let m = 10;
     let d = 4;
@@ -90,11 +92,6 @@ fn example_private_training() {
         .collect();
 
     let end = Instant::now() - start;
-
-    for i in 0..m {
-        forest[i].save_to_file(&format!("iris_forest/tree_{}.json", i), &ctx);
-    }
-
     println!(
         "[PARAMETERS] :
     Precision bits: {}, \
@@ -103,7 +100,7 @@ fn example_private_training() {
     Dataset classes: {}, \
     Tree depth: {}, \
     Number of trees: {}",
-        ctx.full_message_modulus() as u64,
+        (ctx.full_message_modulus() as u64).ilog2(),
         dataset.n,
         dataset.f,
         n_classes,
@@ -111,6 +108,12 @@ fn example_private_training() {
         m
     );
     println!("[SUMMARY] : Forest built in {:?}", end);
+
+    if EXPORT_FOREST {
+        for i in 0..m {
+            forest[i].save_to_file(&format!("wine_forest/tree_{}.json", i), &ctx);
+        }
+    }
 }
 
 fn example_clear_training() {
@@ -160,5 +163,6 @@ fn example_clear_training() {
 }
 
 fn main() {
-    example_clear_training();
+    // example_clear_training();
+    example_private_training();
 }

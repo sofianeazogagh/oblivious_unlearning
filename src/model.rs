@@ -189,6 +189,10 @@ impl Tree {
 
     #[allow(dead_code)]
     pub fn save_to_file(&self, filepath: &str, ctx: &Context) {
+        // Create directory if it doesn't exist
+        if let Some(parent) = std::path::Path::new(filepath).parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
         let json_value = self.to_json(ctx);
         let json_string = serde_json::to_string_pretty(&json_value).unwrap();
         std::fs::write(filepath, json_string).unwrap();
