@@ -12,12 +12,12 @@ use dataset::*;
 mod clear_model;
 use clear_model::*;
 
-use rayon::{iter::{IntoParallelIterator, ParallelIterator}, vec};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use revolut::{key, Context};
+
 use tfhe::shortint::parameters::*;
 
-
-const GENERATE_TREE: bool = true;
+const GENERATE_TREE: bool = false;
 
 fn update() {
     let mut ctx = Context::from(PARAM_MESSAGE_3_CARRY_0);
@@ -61,11 +61,8 @@ fn example_private_training() {
     let private_key = key(ctx.parameters());
     let public_key = &private_key.public_key;
 
-    let dataset = EncryptedDataset::from_file(
-        "data/iris_2bits.csv".to_string(),
-        &private_key,
-        &mut ctx,
-    );
+    let dataset =
+        EncryptedDataset::from_file("data/iris_2bits.csv".to_string(), &private_key, &mut ctx);
 
     let m = 10;
     let d = 4;
@@ -73,34 +70,53 @@ fn example_private_training() {
 
     let start = Instant::now();
 
-    let forest:Vec<Tree> = (0..m).into_iter().map(|i|
-        {
-
+    let forest: Vec<Tree> = (0..m)
+        .into_par_iter()
+        .map(|i| {
             let mut tree = Tree::generate_random_tree(d, n_classes, dataset.f, &ctx);
             let start_one_tree = Instant::now();
-            for j in 0..dataset.n {
-                let query = &dataset.records[j as usize];
-                probonite(&mut tree, &query, &public_key, &ctx);
-            }
+            let luts_samples = (0..dataset.n)
+                .into_par_iter()
+                .map(|j| {
+                    let query = &dataset.records[j as usize];
+                    probonite(&tree, query, &public_key, &ctx)
+                })
+                .collect();
+            tree.sum_samples_luts_counts(&luts_samples, &public_key);
             let elapsed_one_tree = Instant::now() - start_one_tree;
-            println!("Time taken for Tree[{i}] : {:?}",elapsed_one_tree);
-
+            println!("Time taken for Tree[{i}] : {:?}", elapsed_one_tree);
             tree
-            
-        }).collect();
+        })
+        .collect();
 
     let end = Instant::now() - start;
-    println!("Time taken for building the forest : {:?}", end);
-    
+
+    for i in 0..m {
+        forest[i].save_to_file(&format!("iris_forest/tree_{}.json", i), &ctx);
+    }
+
+    println!(
+        "[PARAMETERS] :
+    Precision bits: {}, \
+    Dataset size: {}, \
+    Dataset dimension: {}, \
+    Dataset classes: {}, \
+    Tree depth: {}, \
+    Number of trees: {}",
+        ctx.full_message_modulus() as u64,
+        dataset.n,
+        dataset.f,
+        n_classes,
+        d,
+        m
+    );
+    println!("[SUMMARY] : Forest built in {:?}", end);
 }
 
-
 fn example_clear_training() {
-
-    let mut clear_dataset = ClearDataset::from_file(
-    "data/iris_2bits.csv".to_string());
+    let clear_dataset = ClearDataset::from_file("data/iris_2bits.csv".to_string());
     let column_domains = clear_dataset.column_domains;
-    let n_classes = column_domains[column_domains.len()-1].1 + 1;
+    let n_classes = column_domains[column_domains.len() - 1].1 + 1;
 
     let mut clear_tree = generate_clear_random_tree(3, n_classes, column_domains, clear_dataset.f);
 
@@ -110,7 +126,6 @@ fn example_clear_training() {
 
     clear_tree.assign_label_to_leafs();
     clear_tree.print_tree();
-
 }
 
 fn main() {

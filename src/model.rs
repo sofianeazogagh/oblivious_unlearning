@@ -1,5 +1,6 @@
 // REVOLUT
 use revolut::*;
+use tfhe::boolean::public_key;
 
 pub struct Root {
     pub threshold: u64,
@@ -110,6 +111,23 @@ impl Tree {
         }
         println!("");
         println!("-----------------------------");
+    }
+
+    pub fn sum_samples_luts_counts(
+        &mut self,
+        luts_samples: &Vec<Vec<LUT>>,
+        public_key: &PublicKey,
+    ) {
+        let n_samples = luts_samples.len();
+        let n_leaves = luts_samples[0].len();
+
+        for i in 0..n_leaves {
+            let mut sum_lut = luts_samples[0][i].clone();
+            for j in 1..n_samples {
+                public_key.glwe_sum_assign(&mut sum_lut.0, &luts_samples[j][i].0);
+            }
+            self.leaves[i].counts = sum_lut;
+        }
     }
 
     #[allow(dead_code)]

@@ -1,5 +1,6 @@
 use std::time::Instant;
 
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 // TFHE
 use tfhe::core_crypto::prelude::*;
 
@@ -73,25 +74,27 @@ pub fn blind_node_selection(
 }
 
 pub fn blind_leaf_increment(
-    leaves: &mut Vec<Leaf>,
     accumulators: &Vec<LWE>,
     sample_class: &LWE,
     public_key: &PublicKey,
     ctx: &Context,
-) {
-    for i in 0..leaves.len() {
-        public_key.blind_array_increment(
-            &mut leaves[i].counts,
-            &sample_class,
-            &accumulators[i],
-            ctx,
-        );
-    }
+) -> Vec<LUT> {
+    let luts = (0..accumulators.len())
+        .into_par_iter()
+        .map(|i| {
+            let mut lut = LUT::from_lwe(&accumulators[i], public_key, ctx);
+            public_key.blind_rotation_assign(sample_class, &mut lut, ctx);
+            // lut = [0, 0, ..., 0, 1, 0, ..., 0] if acc[i] = 1
+            // lut = [0, 0, ..., 0, 0, 0, ..., 0] if acc[i] = 0
+            lut
+        })
+        .collect();
+
+    luts
 }
 
-pub fn probonite(tree: &mut Tree, query: &Query, public_key: &PublicKey, ctx: &Context) {
+pub fn probonite(tree: &Tree, query: &Query, public_key: &PublicKey, ctx: &Context) -> Vec<LUT> {
     // First stage
-
     let start = Instant::now();
     let index = tree.root.feature_index;
     let threshold = tree.root.threshold;
@@ -122,15 +125,11 @@ pub fn probonite(tree: &mut Tree, query: &Query, public_key: &PublicKey, ctx: &C
         println!("Internal stage {}: {:?}", i, end.duration_since(start));
     }
 
-    // Last stage : increment the leaves and get the majority class through argmax
+    // Last stage
     let start = Instant::now();
-    blind_leaf_increment(
-        &mut tree.leaves,
-        &accumulators,
-        &query.class,
-        public_key,
-        ctx,
-    );
+    let luts = blind_leaf_increment(&accumulators, &query.class, public_key, ctx);
     let end = Instant::now();
     println!("Last stage: {:?}", end.duration_since(start));
+
+    luts
 }
