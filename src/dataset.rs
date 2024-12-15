@@ -3,6 +3,7 @@ use csv;
 
 //  import Query from probonite.rs
 use crate::probonite::Query;
+use rand::seq::SliceRandom;
 
 
 use revolut::{Context, PrivateKey, LUT};
@@ -44,6 +45,8 @@ impl EncryptedDataset {
             panic!("Number of features exceeds the modulus");
         }
 
+    
+
         Self {
             records,
             f,
@@ -51,5 +54,32 @@ impl EncryptedDataset {
         }
     }
 
+    pub fn split(&self, train: f64) -> (EncryptedDataset, EncryptedDataset) {
+        let mut rng = rand::thread_rng();
+        let n = self.records.len();
+        let mut indices: Vec<usize> = (0..n).collect();
+        indices.shuffle(&mut rng);
+
+        let train_size = (n as f64 * train).round() as usize;
+        let train_indices = &indices[0..train_size];
+        let test_indices = &indices[train_size..];
+
+        let train_records: Vec<Query> = train_indices.iter().map(|&i| self.records[i].clone()).collect();
+        let test_records: Vec<Query> = test_indices.iter().map(|&i| self.records[i].clone()).collect();
+
+        (
+            EncryptedDataset {
+                records: train_records,
+                f: self.f,
+                n: train_size as u64,
+            },
+            EncryptedDataset {
+                records: test_records,
+                f: self.f,
+                n: (n - train_size) as u64,
+            },
+        )
+
+    }
 
 }

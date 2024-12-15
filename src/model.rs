@@ -66,7 +66,7 @@ impl Tree {
 
         // Generate the root
         tree.root.threshold = rand::random::<u64>() % ctx.full_message_modulus() as u64;
-        tree.root.feature_index = rand::random::<u64>() % ctx.full_message_modulus() as u64;
+        tree.root.feature_index = rand::random::<u64>() % f;
 
         // Generate the nodes
         // Generate internal nodes for each level

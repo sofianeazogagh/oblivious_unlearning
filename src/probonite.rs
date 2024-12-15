@@ -14,8 +14,8 @@ use crate::model::*;
 const DEBUG: bool = false;
 
 pub struct Query {
-    class: LWE,
-    features: LUT,
+    pub class: LWE,
+    pub features: LUT,
 }
 
 impl Query {
@@ -30,6 +30,13 @@ impl Query {
         Self {
             class: class_lwe,
             features: feature_lut,
+        }
+    }
+
+    pub fn clone(&self) -> Self {
+        Self {
+            class: self.class.clone(),
+            features: self.features.clone(),
         }
     }
 }
@@ -83,7 +90,11 @@ pub fn blind_leaf_increment(
         .into_par_iter()
         .map(|i| {
             let mut lut = LUT::from_lwe(&accumulators[i], public_key, ctx);
-            public_key.blind_rotation_assign(sample_class, &mut lut, ctx);
+            public_key.blind_rotation_assign(
+                &public_key.neg_lwe(&sample_class, ctx),
+                &mut lut,
+                ctx,
+            );
             // lut = [0, 0, ..., 0, 1, 0, ..., 0] if acc[i] = 1
             // lut = [0, 0, ..., 0, 0, 0, ..., 0] if acc[i] = 0
             lut
@@ -103,7 +114,9 @@ pub fn probonite(tree: &Tree, query: &Query, public_key: &PublicKey, ctx: &Conte
     let not_b = public_key.not_lwe(&b, ctx);
     let mut accumulators = vec![b, not_b];
     let end = Instant::now();
-    println!("First stage: {:?}", end.duration_since(start));
+    if DEBUG {
+        println!("First stage: {:?}", end.duration_since(start));
+    }
 
     // Internal Stages
     for i in 0..tree.nodes.len() {
@@ -122,14 +135,18 @@ pub fn probonite(tree: &Tree, query: &Query, public_key: &PublicKey, ctx: &Conte
         let b = public_key.blind_lt_bma_mv(&threshold, &feature, ctx);
         accumulators = next_accumulators(&accumulators, &b, public_key, ctx);
         let end = Instant::now();
-        println!("Internal stage {}: {:?}", i, end.duration_since(start));
+        if DEBUG {
+            println!("Internal stage {}: {:?}", i, end.duration_since(start));
+        }
     }
 
     // Last stage
     let start = Instant::now();
     let luts = blind_leaf_increment(&accumulators, &query.class, public_key, ctx);
     let end = Instant::now();
-    println!("Last stage: {:?}", end.duration_since(start));
+    if DEBUG {
+        println!("Last stage: {:?}", end.duration_since(start));
+    }
 
     luts
 }
