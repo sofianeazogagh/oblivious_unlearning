@@ -105,7 +105,27 @@ pub fn blind_leaf_increment(
 }
 
 pub fn probonite(tree: &Tree, query: &Query, public_key: &PublicKey, ctx: &Context) -> Vec<LUT> {
-    // First stage
+    // Normal Probonite inference
+
+    let accumulators = probonite_inference(tree, query, public_key, ctx);
+
+    // Writing the class in the selected leaf
+    let start = Instant::now();
+    let luts = blind_leaf_increment(&accumulators, &query.class, public_key, ctx);
+    let end = Instant::now();
+    if DEBUG {
+        println!("Last stage: {:?}", end.duration_since(start));
+    }
+
+    luts
+}
+
+pub fn probonite_inference(
+    tree: &Tree,
+    query: &Query,
+    public_key: &PublicKey,
+    ctx: &Context,
+) -> Vec<LWE> {
     let start = Instant::now();
     let index = tree.root.feature_index;
     let threshold = tree.root.threshold;
@@ -140,13 +160,5 @@ pub fn probonite(tree: &Tree, query: &Query, public_key: &PublicKey, ctx: &Conte
         }
     }
 
-    // Last stage
-    let start = Instant::now();
-    let luts = blind_leaf_increment(&accumulators, &query.class, public_key, ctx);
-    let end = Instant::now();
-    if DEBUG {
-        println!("Last stage: {:?}", end.duration_since(start));
-    }
-
-    luts
+    return accumulators;
 }

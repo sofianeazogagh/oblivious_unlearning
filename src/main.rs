@@ -1,4 +1,5 @@
 use std::time::Instant;
+use std::io::Write;
 
 mod probonite;
 use bincode::{config::AllowTrailing, de};
@@ -16,7 +17,9 @@ use clear_model::*;
 use rayon::{iter::{IntoParallelIterator, ParallelIterator}, vec};
 use revolut::{key, Context, LUT, PrivateKey};
 
-use tfhe::shortint::parameters::*;
+use tfhe::{core_crypto::prelude::LweCiphertext, shortint::parameters::*};
+
+type LWE = LweCiphertext<Vec<u64>>;
 
 const GENERATE_TREE: bool = true;
 const EXPORT_FOREST: bool = false;
@@ -73,6 +76,7 @@ fn example_private_training() {
     const N_CLASSES :u64= 3;
     const DATASET_NAME:&str = "iris_2bits";
     const M:u64 = 10;
+    const NUM_EXPERIMENTS:u64 = 10;
 
     let mut ctx = Context::from(PARAM_MESSAGE_2_CARRY_0);
     let private_key = key(ctx.parameters());
@@ -81,7 +85,6 @@ fn example_private_training() {
     let dataset =
         EncryptedDataset::from_file("data/".to_string() + DATASET_NAME + ".csv", &private_key, &mut ctx);
 
- 
     
     let (train_dataset, test_dataset) = dataset.split(0.8);
     let train_size:u64 = train_dataset.n;
@@ -92,7 +95,7 @@ fn example_private_training() {
     let mut times = Vec::new();
 
 
-    for _ in 0..num_experiments {
+    for _ in 0..NUM_EXPERIMENTS {
 
         // Server trains the forest
         println!("\n --------- Training the forest ---------");
@@ -145,9 +148,6 @@ fn example_private_training() {
             assigned_labels.push(labels);
         }
 
-        println!("{:?}", decrypted_counts);
-        println!("{:?}", assigned_labels);
-
         let end = Instant::now() - start;
 
         println!(
@@ -166,6 +166,7 @@ fn example_private_training() {
             M
         );
         println!("[SUMMARY] : Forest built in {:?}", end);
+
         times.push(end.as_secs_f64());
 
         if EXPORT_FOREST {
@@ -174,13 +175,11 @@ fn example_private_training() {
             }
         }
 
-
-
         // Server tests the forest
         println!("\n --------- Testing the forest ---------");
         let mut correct = 0;
         let mut total = 0;
-        let lut_samples:Vec<Vec<Vec<LUT>>> = (0..M)
+        let accumulators:Vec<Vec<Vec<LWE>>> = (0..M)
             .into_par_iter()
             .map(|i| {
                 (0..test_size)
@@ -188,35 +187,32 @@ fn example_private_training() {
                     .map(|j| {
                         let query = &test_dataset.records[j as usize];
                         println!("Testing Tree[{}] : Record[{}]", i, j);
-                        probonite(&forest[i as usize].0, query, &public_key, &ctx)
+                        probonite_inference(&forest[i as usize].0, query, &public_key, &ctx)
                     })
                     .collect()
             })
             .collect::<Vec<_>>();
 
 
-        let decrypted_inference = lut_samples.iter().map(|luts_samples| {
-            decrypt_counts_inference(luts_samples.clone(), N_CLASSES, &private_key, &ctx)
+        let decrypted_accumulators:Vec<Vec<Vec<u64>>> = accumulators.iter().map(|accs| {
+            accs.iter().map(|acc| {
+                acc.iter().map(|lwe| private_key.decrypt_lwe(lwe, &ctx)).collect()
+            }).collect()
         }).collect::<Vec<_>>();
 
-        for sample_idx in 0..test_size{
-            
-            let mut votes: Vec<i32> = vec![0; N_CLASSES as usize];
+        println!("{:?}", decrypted_accumulators);
+
+        for sample_idx in  0..test_size{
+            let mut votes = vec![0; N_CLASSES as usize];
 
             for tree_idx in 0..M{
-                let sample_leaves = &decrypted_inference[tree_idx as usize][sample_idx as usize];
-                // println!("{:?}", sample_leaves);
+                let sample_leaves = &decrypted_accumulators[tree_idx as usize][sample_idx as usize];
                 let mut selected_leaf = 0;
                 let mut found = false;
                 for i in 0..2u32.pow(TREE_DEPTH as u32){
-                    for j in 0..N_CLASSES{
-                        if sample_leaves[i as usize][j as usize] == 1{
-                            selected_leaf = i;
-                            found = true;
-                            break;
-                        }
-                    }
-                    if found{
+                    if sample_leaves[i as usize] == 1{
+                        selected_leaf = i;
+                        found = true;
                         break;
                     }
                 }
@@ -238,8 +234,12 @@ fn example_private_training() {
 
         println!("\n-------- Accuracy -------- ");
         println!("Correct: {}, Total: {}", correct, total);
-        println!("\n Accuracy: {} ", correct as f64 / total as f64);
-        accuracies.push(correct as f64 / total as f64);
+        let accuracy = correct as f64 / total as f64;
+        println!("\n Accuracy: {} ", accuracy);
+        accuracies.push(accuracy);
+        
+        log(&format!("logs/{}_{}_{}.csv", DATASET_NAME, TREE_DEPTH, M), &format!("{},{}", correct as f64 / total as f64, end.as_secs_f64()));
+        
 
 
     }
@@ -253,6 +253,15 @@ fn example_private_training() {
 
 
     
+}
+
+pub fn log(filepath: &str, message: &str) {
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(filepath)
+        .unwrap();
+    writeln!(file, "{}", message).unwrap();
 }
 
 // Decrypt the counts yielded by one tree for multiple samples
@@ -283,21 +292,6 @@ pub fn decrypt_counts(lut_samples: Vec<Vec<LUT>>, n_classes:u64, tree_depth:u64,
 
     result_counts
 }
-
-
-pub fn decrypt_counts_inference(lut_samples: Vec<Vec<LUT>>, n_classes:u64, private_key: &PrivateKey, ctx: &Context) -> Vec<Vec<Vec<u64>>> {
-    let mut results = Vec::new();
-    for lut_vec in lut_samples.iter(){
-        let mut rec_vec = Vec::new();
-        for lut in lut_vec.iter(){
-            rec_vec.push(lut.to_array(private_key, &ctx)[..n_classes as usize].to_vec());
-        }
-        results.push(rec_vec);
-    }
-
-    results
-}
-
 
 
 fn example_clear_training() {
