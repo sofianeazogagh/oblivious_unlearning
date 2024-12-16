@@ -57,8 +57,7 @@ impl ClearTree {
         }
     }
 
-    pub fn update_statistic(&mut self, sample: Vec<u64>){
-
+    pub fn update_statistic(&mut self, sample: Vec<u64>) {
         let mut current_node = &InternalNode {
             id: 0,
             threshold: 0,
@@ -82,7 +81,7 @@ impl ClearTree {
             // current_node.print();
         }
 
-        let mut selected_leaf = & mut Leaf {
+        let mut selected_leaf = &mut Leaf {
             counts: vec![0; self.n_classes as usize],
             label: 0,
         };
@@ -96,7 +95,6 @@ impl ClearTree {
         let class_index = sample[sample.len() - 1] as usize;
 
         selected_leaf.counts[class_index] += 1;
-
     }
 
     pub fn assign_label_to_leafs(&mut self) {
@@ -113,8 +111,7 @@ impl ClearTree {
         }
     }
 
-    pub fn infer_label(&self, record: Vec<u64>)-> u64 {
-        
+    pub fn infer_label(&self, record: Vec<u64>) -> u64 {
         let mut current_node = &InternalNode {
             id: 0,
             threshold: 0,
@@ -135,7 +132,8 @@ impl ClearTree {
             }
         }
 
-        let selected_leaf = if current_node.threshold <= record[current_node.feature_index as usize] {
+        let selected_leaf = if current_node.threshold <= record[current_node.feature_index as usize]
+        {
             &self.leaves[2 * current_node.id as usize]
         } else {
             &self.leaves[2 * current_node.id as usize + 1]
@@ -143,7 +141,7 @@ impl ClearTree {
 
         selected_leaf.label
     }
-    
+
     pub fn print_tree(&self) {
         print!("---------- (t,f) ----------\n");
         self.root.print();
@@ -171,7 +169,7 @@ impl ClearDataset {
     pub fn from_file(filepath: String) -> Self {
         let mut rdr = csv::Reader::from_path(filepath).unwrap();
         let mut records = Vec::new();
-        let mut column_domains:Vec<(u64, u64)> = Vec::new();
+        let mut column_domains: Vec<(u64, u64)> = Vec::new();
         let mut n = 0;
 
         for result in rdr.records() {
@@ -252,7 +250,12 @@ impl ClearDataset {
     }
 }
 
-pub fn generate_clear_random_tree(depth: u64, n_classes: u64, column_domains: Vec<(u64, u64)>, f: u64) -> ClearTree {
+pub fn generate_clear_random_tree(
+    depth: u64,
+    n_classes: u64,
+    column_domains: Vec<(u64, u64)>,
+    f: u64,
+) -> ClearTree {
     let mut tree = ClearTree::new();
     tree.depth = depth;
     tree.n_classes = n_classes;
@@ -260,7 +263,7 @@ pub fn generate_clear_random_tree(depth: u64, n_classes: u64, column_domains: Ve
     let mut rng = rand::thread_rng();
 
     // the feature index should be selected among the possible feature indices
-    tree.root.feature_index =  rng.gen_range(0..f);
+    tree.root.feature_index = rng.gen_range(0..f);
     let mut feature_domain = column_domains[tree.root.feature_index as usize];
 
     tree.root.threshold = rng.gen_range(feature_domain.0..feature_domain.1);
@@ -289,11 +292,3 @@ pub fn generate_clear_random_tree(depth: u64, n_classes: u64, column_domains: Ve
 
     tree
 }
-
-
-
-
-
-
-
-

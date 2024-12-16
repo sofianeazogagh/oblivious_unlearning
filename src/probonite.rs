@@ -111,7 +111,7 @@ pub fn probonite(tree: &Tree, query: &Query, public_key: &PublicKey, ctx: &Conte
 
     // Writing the class in the selected leaf
     let start = Instant::now();
-    let luts = blind_leaf_increment(&accumulators, &query.class, public_key, ctx);
+    let luts = blind_leaf_increment(&accumulators.0, &query.class, public_key, ctx);
     let end = Instant::now();
     if DEBUG {
         println!("Last stage: {:?}", end.duration_since(start));
@@ -125,7 +125,8 @@ pub fn probonite_inference(
     query: &Query,
     public_key: &PublicKey,
     ctx: &Context,
-) -> Vec<LWE> {
+) -> (Vec<LWE>, f64) {
+    let mut inference_time = 0.0;
     let start = Instant::now();
     let index = tree.root.feature_index;
     let threshold = tree.root.threshold;
@@ -134,6 +135,7 @@ pub fn probonite_inference(
     let not_b = public_key.not_lwe(&b, ctx);
     let mut accumulators = vec![b, not_b];
     let end = Instant::now();
+    inference_time += end.duration_since(start).as_secs_f64();
     if DEBUG {
         println!("First stage: {:?}", end.duration_since(start));
     }
@@ -158,7 +160,12 @@ pub fn probonite_inference(
         if DEBUG {
             println!("Internal stage {}: {:?}", i, end.duration_since(start));
         }
+        inference_time += end.duration_since(start).as_secs_f64();
     }
 
-    return accumulators;
+    if DEBUG {
+        println!("Total inference time: {:?}", inference_time);
+    }
+
+    (accumulators, inference_time)
 }
