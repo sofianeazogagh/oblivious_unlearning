@@ -76,8 +76,9 @@ fn example_private_training() {
     const N_CLASSES: u64 = 3;
     const PRECISION_BITS: u64 = 4;
     const DATASET_NAME: &str = "iris_4bits";
-    const M: u64 = 3;
-    const NUM_EXPERIMENTS: u64 = 2;
+    // const DATASET_NAME: &str = "wine_4bits";
+    const M: u64 = 64;
+    const NUM_EXPERIMENTS: u64 = 10;
 
     let mut ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
     let private_key = key(ctx.parameters());
@@ -98,7 +99,7 @@ fn example_private_training() {
     let mut times = Vec::new();
     let mut inference_times = Vec::new();
 
-    for _ in 0..NUM_EXPERIMENTS {
+    for experiment in 0..NUM_EXPERIMENTS {
         // Server trains the forest
         println!("\n --------- Training the forest ---------");
         let start = Instant::now();
@@ -182,7 +183,7 @@ fn example_private_training() {
         if EXPORT_FOREST {
             for i in 0..M {
                 forest[i as usize].0.save_to_file(
-                    &format!("iris_forest/{PRECISION_BITS}bits/tree_{}.json", i),
+                    &format!("{DATASET_NAME}_forest/{TREE_DEPTH}_depth/experiment_{}/tree_{}.json", experiment, i),
                     &ctx,
                 );
             }
