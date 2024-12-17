@@ -72,7 +72,7 @@ fn test_probonite() {
 }
 
 fn example_private_training() {
-    const TREE_DEPTH: u64 = 3;
+    const TREE_DEPTH: u64 = 2;
     const N_CLASSES: u64 = 3;
     const PRECISION_BITS: u64 = 4;
     const DATASET_NAME: &str = "iris_4bits";
@@ -169,12 +169,7 @@ fn example_private_training() {
         Dataset classes: {}, \
         Tree depth: {}, \
         Number of trees: {}",
-            (ctx.full_message_modulus() as u64).ilog2(),
-            train_dataset.n,
-            train_dataset.f,
-            N_CLASSES,
-            TREE_DEPTH,
-            M
+            PRECISION_BITS, train_dataset.n, train_dataset.f, N_CLASSES, TREE_DEPTH, M
         );
         println!("[SUMMARY] : Forest built in {:?}", end);
 
@@ -183,7 +178,10 @@ fn example_private_training() {
         if EXPORT_FOREST {
             for i in 0..M {
                 forest[i as usize].0.save_to_file(
-                    &format!("{DATASET_NAME}_forest/{TREE_DEPTH}_depth/experiment_{}/tree_{}.json", experiment, i),
+                    &format!(
+                        "{DATASET_NAME}_forest/{TREE_DEPTH}_depth/experiment_{}/tree_{}.json",
+                        experiment, i
+                    ),
                     &ctx,
                 );
             }
