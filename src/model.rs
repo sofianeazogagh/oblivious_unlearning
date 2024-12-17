@@ -2,6 +2,7 @@
 use revolut::*;
 use tfhe::boolean::public_key;
 
+#[derive(Clone)]
 pub struct Root {
     pub threshold: u64,
     pub feature_index: u64,

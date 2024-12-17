@@ -72,13 +72,13 @@ fn test_probonite() {
 }
 
 fn example_private_training() {
-    const TREE_DEPTH: u64 = 2;
+    const TREE_DEPTH: u64 = 4;
     const N_CLASSES: u64 = 3;
     const PRECISION_BITS: u64 = 4;
     const DATASET_NAME: &str = "iris_4bits";
     // const DATASET_NAME: &str = "wine_4bits";
-    const M: u64 = 64;
-    const NUM_EXPERIMENTS: u64 = 10;
+    const M: u64 = 1;
+    const NUM_EXPERIMENTS: u64 = 1;
 
     let mut ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
     let private_key = key(ctx.parameters());
@@ -91,7 +91,8 @@ fn example_private_training() {
     );
 
     let (train_dataset, test_dataset) = dataset.split(0.8);
-    let train_size: u64 = train_dataset.n;
+    // let train_size: u64 = train_dataset.n;
+    let train_size: u64 = 10;
     let test_size: u64 = test_dataset.n;
 
     let num_experiments = 1;
@@ -104,7 +105,7 @@ fn example_private_training() {
         println!("\n --------- Training the forest ---------");
         let start = Instant::now();
 
-        let forest: Vec<(Tree, Vec<Vec<LUT>>)> = (0..M)
+        let mut forest: Vec<(Tree, Vec<Vec<LUT>>)> = (0..M)
             .into_par_iter()
             .map(|i| {
                 let mut tree = Tree::generate_random_tree(TREE_DEPTH, N_CLASSES, dataset.f, &ctx);
@@ -140,6 +141,11 @@ fn example_private_training() {
                 )
             })
             .collect::<Vec<_>>();
+
+        // // Sum the LUTs counts for each tree
+        // forest.iter_mut().for_each(|(tree, luts_samples)| {
+        //     tree.sum_samples_luts_counts(luts_samples, &public_key);
+        // });
 
         // Client assign labels to the leaves. assigned_labels[i][j] is the label assigned to the j-th leaf of the i-th tree
         let mut assigned_labels = Vec::new();
