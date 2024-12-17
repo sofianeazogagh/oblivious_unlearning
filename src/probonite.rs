@@ -145,16 +145,22 @@ pub fn probonite_inference(
         let start = Instant::now();
         let (threshold, feature_index) =
             blind_node_selection(&tree.nodes[i], &accumulators, public_key, ctx);
+        let feature = public_key.blind_array_access(&feature_index, &query.features, ctx);
+        let b = public_key.blind_lt_bma_mv(&threshold, &feature, ctx);
 
         if DEBUG {
             let private_key = key(ctx.parameters());
             let t_selected = private_key.decrypt_lwe(&threshold, ctx);
             let f_selected = private_key.decrypt_lwe(&feature_index, ctx);
             println!("selected:({t_selected}, {f_selected})");
+            let feature_decrypted = private_key.decrypt_lwe(&feature, ctx);
+            let threshold_decrypted = private_key.decrypt_lwe(&threshold, ctx);
+            println!(
+                "expected b: {}",
+                (threshold_decrypted < feature_decrypted) as u64
+            );
+            private_key.debug_lwe("actual b : ", &b, ctx);
         }
-
-        let feature = public_key.blind_array_access(&feature_index, &query.features, ctx);
-        let b = public_key.blind_lt_bma_mv(&threshold, &feature, ctx);
         accumulators = next_accumulators(&accumulators, &b, public_key, ctx);
         let end = Instant::now();
         if DEBUG {
@@ -192,8 +198,7 @@ impl TreeLUT {
         }
     }
 
-    pub fn from_tree(tree: &Tree, n_classes: u64, ctx: &Context) -> Self {
-        let depth = (tree.nodes.len() as f64).log2() as u64 + 2;
+    pub fn from_tree(tree: &Tree, depth: u64, n_classes: u64, ctx: &Context) -> Self {
         let mut stages = Vec::new();
 
         // Pour chaque niveau de l'arbre (sauf la racine)
@@ -263,12 +268,11 @@ impl TreeLUT {
         tree
     }
 
-    pub fn print_tree(&self, ctx: &Context) {
+    pub fn print_tree(&self, private_key: &PrivateKey, ctx: &Context) {
         println!(
             "Root: ({}, {})",
             self.root.feature_index, self.root.threshold
         );
-        let private_key = key(ctx.parameters());
         for (i, stage) in self.stages.iter().enumerate() {
             let number_of_nodes = 2u64.pow(i as u32 + 1);
 
@@ -301,25 +305,32 @@ pub struct QueryLUT {
 
 fn probolut(tree: &mut TreeLUT, query: &QueryLUT, public_key: &PublicKey, ctx: &Context) {
     // First stage
+    let private_key = key(ctx.parameters());
     let index = tree.root.feature_index;
     let threshold = tree.root.threshold;
     let feature = public_key.lut_extract(&query.features, index as usize, ctx);
-    let b = public_key.leq_scalar(&feature, threshold, ctx);
+    let b = public_key.lt_scalar(&feature, threshold, ctx);
+    private_key.debug_lwe("b", &b, ctx);
 
     // Internal Stages
     let mut selector = b.clone();
-    lwe_ciphertext_cleartext_mul_assign(&mut selector, Cleartext(tree.depth as u64));
+    private_key.debug_lwe("selector", &selector, ctx);
     for i in 0..tree.stages.len() {
-        let (lut_index, lut_threshold) = &tree.stages[i as usize];
+        let (lut_threshold, lut_index) = &tree.stages[i];
         let feature_index = public_key.blind_array_access(&selector, &lut_index, ctx);
         let threshold = public_key.blind_array_access(&selector, &lut_threshold, ctx);
         let feature = public_key.blind_array_access(&feature_index, &query.features, ctx);
-        let b = public_key.blind_lt_bma_mv(&threshold, &feature, ctx);
-        let depth_div = tree.depth / 2u64.pow(i as u32);
-        selector = public_key.lwe_mul_add(&b, &selector, depth_div);
+        let b = public_key.blind_lt_bma_mv(&feature, &threshold, ctx);
+        selector = public_key.lwe_mul_add(&b, &selector, 2);
+        private_key.debug_lwe("b", &b, ctx);
+        private_key.debug_lwe("selector_updated", &selector, ctx);
     }
 
     // Last stage
+    private_key.debug_lwe("selector", &selector, ctx);
+    private_key.debug_lwe("class[0]", &query.class[0], ctx);
+    private_key.debug_lwe("class[1]", &query.class[1], ctx);
+    private_key.debug_lwe("class[2]", &query.class[2], ctx);
     for c in 0..tree.n_classes {
         public_key.blind_array_increment(
             &mut tree.leaves[c as usize],
@@ -334,24 +345,24 @@ fn probolut(tree: &mut TreeLUT, query: &QueryLUT, public_key: &PublicKey, ctx: &
 mod tests {
     use super::*;
     use revolut::*;
-    use tfhe::shortint::parameters::PARAM_MESSAGE_4_CARRY_0;
+    use tfhe::shortint::parameters::{PARAM_MESSAGE_4_CARRY_0, PARAM_MESSAGE_5_CARRY_0};
 
     #[test]
     fn test_probolut() {
         // Initialize context
-        let mut ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
+        let mut ctx = Context::from(PARAM_MESSAGE_5_CARRY_0);
         let private_key = key(ctx.parameters());
         let public_key = &private_key.public_key;
 
-        const TREE_DEPTH: u64 = 4;
+        const TREE_DEPTH: u64 = 5;
         const N_CLASSES: u64 = 3;
         let f = ctx.full_message_modulus() as u64;
 
         let classical_tree = Tree::generate_random_tree(TREE_DEPTH, N_CLASSES, f, &ctx);
 
-        let mut tree = TreeLUT::from_tree(&classical_tree, N_CLASSES, &ctx);
+        let mut tree = TreeLUT::from_tree(&classical_tree, TREE_DEPTH, N_CLASSES, &ctx);
 
-        tree.print_tree(&ctx);
+        tree.print_tree(&private_key, &ctx);
 
         // Create a query
         let query = QueryLUT {
@@ -360,12 +371,52 @@ mod tests {
                 private_key.allocate_and_encrypt_lwe(0, &mut ctx),
                 private_key.allocate_and_encrypt_lwe(0, &mut ctx),
             ],
-            features: LUT::from_vec_trivially(&vec![1, 2, 3, 4], &ctx),
+            features: LUT::from_vec(
+                &vec![31; ctx.full_message_modulus() as usize],
+                &private_key,
+                &mut ctx,
+            ),
         };
 
         // Run probolut
+        let start = Instant::now();
         probolut(&mut tree, &query, &public_key, &ctx);
+        let end = Instant::now();
+        println!("Time taken: {:?}", end.duration_since(start));
 
-        tree.print_tree(&ctx);
+        tree.print_tree(&private_key, &ctx);
+    }
+
+    #[test]
+    fn test_probonite() {
+        // Initialize context
+        let mut ctx = Context::from(PARAM_MESSAGE_5_CARRY_0);
+        let private_key = key(ctx.parameters());
+        let public_key = &private_key.public_key;
+
+        const TREE_DEPTH: u64 = 5;
+        const N_CLASSES: u64 = 3;
+        let f = ctx.full_message_modulus() as u64;
+
+        // Generate a random tree
+        let mut tree = Tree::generate_random_tree(TREE_DEPTH, N_CLASSES, f, &ctx);
+
+        // Create a query with test data
+        let feature_vector = vec![1; ctx.full_message_modulus() as usize];
+        let features_vector = LUT::from_vec(&feature_vector, &private_key, &mut ctx);
+        let class = private_key.allocate_and_encrypt_lwe(0, &mut ctx);
+
+        let query = Query {
+            features: features_vector,
+            class: class,
+        };
+
+        // Run probonite
+        let start = Instant::now();
+        let _ = probonite(&mut tree, &query, &public_key, &ctx);
+        let end = Instant::now();
+        println!("Time probonite taken: {:?}", end.duration_since(start));
+
+        tree.print_tree(&private_key, &ctx);
     }
 }
