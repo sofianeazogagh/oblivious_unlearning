@@ -1,6 +1,8 @@
 use std::time::Instant;
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+
+use crate::dataset::*;
 // TFHE
 use tfhe::core_crypto::prelude::*;
 
@@ -176,7 +178,7 @@ pub fn probonite_inference(
     (accumulators, inference_time)
 }
 
-struct TreeLUT {
+pub struct TreeLUT {
     pub root: Root,
     pub stages: Vec<(LUT, LUT)>, // stages[i] contains (lut_index, lut_threshold) for the i-th stage
     pub leaves: Vec<LUT>,        // leaves[i] contains the lut for the i-th class
@@ -259,7 +261,7 @@ impl TreeLUT {
         }
 
         // Generate the leaves
-        let num_leaves = 2u64.pow(depth as u32);
+        let num_leaves = n_classes;
         for _ in 0..num_leaves {
             let counts = LUT::from_vec_trivially(&vec![0u64; n_classes as usize], ctx);
             tree.leaves.push(counts);
@@ -298,38 +300,38 @@ impl TreeLUT {
     }
 }
 
-pub struct EncryptedSample {
-    pub class: Vec<LWE>, // one hot encoded class
-    pub features: LUT,
-}
+// pub struct EncryptedSample {
+//     pub class: Vec<LWE>, // one hot encoded class
+//     pub features: LUT,
+// }
 
-impl EncryptedSample {
-    fn one_hot_encode(class: &u64, n_classes: u64) -> Vec<u64> {
-        let mut one_hot = vec![0; n_classes as usize];
-        one_hot[*class as usize] = 1;
-        one_hot
-    }
-    pub fn make_encrypted_sample(
-        feature_vector: &Vec<u64>,
-        class: &u64,
-        n_classes: u64,
-        private_key: &PrivateKey,
-        ctx: &mut Context,
-    ) -> Self {
-        let feature_lut = LUT::from_vec(feature_vector, private_key, ctx);
-        let one_hot_class = Self::one_hot_encode(class, n_classes);
-        let class_lwes = one_hot_class
-            .iter()
-            .map(|x| private_key.allocate_and_encrypt_lwe(*x, ctx))
-            .collect();
-        Self {
-            class: class_lwes,
-            features: feature_lut,
-        }
-    }
-}
+// impl EncryptedSample {
+//     fn one_hot_encode(class: &u64, n_classes: u64) -> Vec<u64> {
+//         let mut one_hot = vec![0; n_classes as usize];
+//         one_hot[*class as usize] = 1;
+//         one_hot
+//     }
+//     pub fn make_encrypted_sample(
+//         feature_vector: &Vec<u64>,
+//         class: &u64,
+//         n_classes: u64,
+//         private_key: &PrivateKey,
+//         ctx: &mut Context,
+//     ) -> Self {
+//         let feature_lut = LUT::from_vec(feature_vector, private_key, ctx);
+//         let one_hot_class = Self::one_hot_encode(class, n_classes);
+//         let class_lwes = one_hot_class
+//             .iter()
+//             .map(|x| private_key.allocate_and_encrypt_lwe(*x, ctx))
+//             .collect();
+//         Self {
+//             class: class_lwes,
+//             features: feature_lut,
+//         }
+//     }
+// }
 
-fn probolut_training(
+pub fn probolut_training(
     tree: &TreeLUT,
     sample: &EncryptedSample,
     public_key: &PublicKey,
@@ -346,11 +348,11 @@ fn probolut_training(
             ctx,
         );
     }
-
+    
     counts
 }
 
-fn probolut_inference(
+pub fn probolut_inference(
     tree: &TreeLUT,
     query: &LUT,
     public_key: &PublicKey,
@@ -362,11 +364,11 @@ fn probolut_inference(
     let threshold = tree.root.threshold;
     let feature = public_key.lut_extract(&query, index as usize, ctx);
     let b = public_key.lt_scalar(&feature, threshold, ctx);
-    private_key.debug_lwe("b", &b, ctx);
+    // private_key.debug_lwe("b", &b, ctx);
 
     // Internal Stages
     let mut selector = b.clone();
-    private_key.debug_lwe("selector", &selector, ctx);
+    // private_key.debug_lwe("selector", &selector, ctx);
     for i in 0..tree.stages.len() {
         let (lut_threshold, lut_index) = &tree.stages[i];
         let feature_index = public_key.blind_array_access(&selector, &lut_index, ctx);
@@ -374,8 +376,8 @@ fn probolut_inference(
         let feature = public_key.blind_array_access(&feature_index, &query, ctx);
         let b = public_key.blind_lt_bma_mv(&feature, &threshold, ctx);
         selector = public_key.lwe_mul_add(&b, &selector, 2);
-        private_key.debug_lwe("b", &b, ctx);
-        private_key.debug_lwe("selector_updated", &selector, ctx);
+        // private_key.debug_lwe("b", &b, ctx);
+        // private_key.debug_lwe("selector_updated", &selector, ctx);
     }
     selector
 }

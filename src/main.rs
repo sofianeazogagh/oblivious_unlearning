@@ -8,6 +8,9 @@ use probonite::*;
 mod model;
 use model::*;
 
+mod xt_probolut;
+use xt_probolut::*;
+
 mod dataset;
 use dataset::*;
 
@@ -75,7 +78,7 @@ fn example_private_training() {
     const TREE_DEPTH: u64 = 4;
     const N_CLASSES: u64 = 3;
     const PRECISION_BITS: u64 = 4;
-    const DATASET_NAME: &str = "iris_4bits";
+    const DATASET_NAME: &str = "iris_2bits";
     // const DATASET_NAME: &str = "wine_4bits";
     const M: u64 = 1;
     const NUM_EXPERIMENTS: u64 = 1;
@@ -343,7 +346,7 @@ fn example_clear_training() {
     let (train_dataset, test_dataset) = clear_dataset.split(0.8);
     let column_domains = clear_dataset.column_domains.clone();
     let n_classes = column_domains[column_domains.len() - 1].1 + 1;
-    let n_trees = 10;
+    let n_trees = 1;
 
     let mut forest: Vec<ClearTree> = Vec::new();
 
@@ -384,6 +387,8 @@ fn example_clear_training() {
 
 fn main() {
     // example_clear_training();
-    example_private_training();
+    // example_private_training();
     // test_probonite();
+
+    xt_probolut::example_xt_training_probolut();
 }
