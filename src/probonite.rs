@@ -298,17 +298,69 @@ impl TreeLUT {
     }
 }
 
-pub struct QueryLUT {
+pub struct EncryptedSample {
     pub class: Vec<LWE>, // one hot encoded class
     pub features: LUT,
 }
 
-fn probolut(tree: &TreeLUT, query: &QueryLUT, public_key: &PublicKey, ctx: &Context) -> Vec<LUT> {
+impl EncryptedSample {
+    fn one_hot_encode(class: &u64, n_classes: u64) -> Vec<u64> {
+        let mut one_hot = vec![0; n_classes as usize];
+        one_hot[*class as usize] = 1;
+        one_hot
+    }
+    pub fn make_encrypted_sample(
+        feature_vector: &Vec<u64>,
+        class: &u64,
+        n_classes: u64,
+        private_key: &PrivateKey,
+        ctx: &mut Context,
+    ) -> Self {
+        let feature_lut = LUT::from_vec(feature_vector, private_key, ctx);
+        let one_hot_class = Self::one_hot_encode(class, n_classes);
+        let class_lwes = one_hot_class
+            .iter()
+            .map(|x| private_key.allocate_and_encrypt_lwe(*x, ctx))
+            .collect();
+        Self {
+            class: class_lwes,
+            features: feature_lut,
+        }
+    }
+}
+
+fn probolut_training(
+    tree: &TreeLUT,
+    sample: &EncryptedSample,
+    public_key: &PublicKey,
+    ctx: &Context,
+) -> Vec<LUT> {
+    let leaf = probolut_inference(tree, &sample.features, public_key, ctx);
+
+    let mut counts = tree.leaves.clone();
+    for c in 0..tree.n_classes {
+        public_key.blind_array_increment(
+            &mut counts[c as usize],
+            &leaf,
+            &sample.class[c as usize],
+            ctx,
+        );
+    }
+
+    counts
+}
+
+fn probolut_inference(
+    tree: &TreeLUT,
+    query: &LUT,
+    public_key: &PublicKey,
+    ctx: &Context,
+) -> LweCiphertext<Vec<u64>> {
     // First stage
     let private_key = key(ctx.parameters());
     let index = tree.root.feature_index;
     let threshold = tree.root.threshold;
-    let feature = public_key.lut_extract(&query.features, index as usize, ctx);
+    let feature = public_key.lut_extract(&query, index as usize, ctx);
     let b = public_key.lt_scalar(&feature, threshold, ctx);
     private_key.debug_lwe("b", &b, ctx);
 
@@ -319,30 +371,13 @@ fn probolut(tree: &TreeLUT, query: &QueryLUT, public_key: &PublicKey, ctx: &Cont
         let (lut_threshold, lut_index) = &tree.stages[i];
         let feature_index = public_key.blind_array_access(&selector, &lut_index, ctx);
         let threshold = public_key.blind_array_access(&selector, &lut_threshold, ctx);
-        let feature = public_key.blind_array_access(&feature_index, &query.features, ctx);
+        let feature = public_key.blind_array_access(&feature_index, &query, ctx);
         let b = public_key.blind_lt_bma_mv(&feature, &threshold, ctx);
         selector = public_key.lwe_mul_add(&b, &selector, 2);
         private_key.debug_lwe("b", &b, ctx);
         private_key.debug_lwe("selector_updated", &selector, ctx);
     }
-
-    // // Last stage
-    // private_key.debug_lwe("selector", &selector, ctx);
-    // private_key.debug_lwe("class[0]", &query.class[0], ctx);
-    // private_key.debug_lwe("class[1]", &query.class[1], ctx);
-    // private_key.debug_lwe("class[2]", &query.class[2], ctx);
-
-    let mut counts = tree.leaves.clone();
-    for c in 0..tree.n_classes {
-        public_key.blind_array_increment(
-            &mut counts[c as usize],
-            &selector,
-            &query.class[c as usize],
-            ctx,
-        );
-    }
-
-    counts
+    selector
 }
 
 #[cfg(test)]
@@ -364,27 +399,24 @@ mod tests {
 
         let classical_tree = Tree::generate_random_tree(TREE_DEPTH, N_CLASSES, f, &ctx);
 
-        let mut tree = TreeLUT::from_tree(&classical_tree, TREE_DEPTH, N_CLASSES, &ctx);
+        let tree = TreeLUT::from_tree(&classical_tree, TREE_DEPTH, N_CLASSES, &ctx);
 
         tree.print_tree(&private_key, &ctx);
 
         // Create a query
-        let query = QueryLUT {
-            class: vec![
-                private_key.allocate_and_encrypt_lwe(1, &mut ctx),
-                private_key.allocate_and_encrypt_lwe(0, &mut ctx),
-                private_key.allocate_and_encrypt_lwe(0, &mut ctx),
-            ],
-            features: LUT::from_vec(
-                &vec![0; ctx.full_message_modulus() as usize],
-                &private_key,
-                &mut ctx,
-            ),
-        };
+        let feature_vector = vec![31; ctx.full_message_modulus() as usize];
+        let class = 1;
+        let sample = EncryptedSample::make_encrypted_sample(
+            &feature_vector,
+            &class,
+            N_CLASSES,
+            &private_key,
+            &mut ctx,
+        );
 
         // Run probolut
         let start = Instant::now();
-        let counts = probolut(&tree, &query, &public_key, &ctx);
+        let counts = probolut_training(&tree, &sample, &public_key, &ctx);
         let end = Instant::now();
         println!("Time taken: {:?}", end.duration_since(start));
 
@@ -392,6 +424,29 @@ mod tests {
             println!(
                 "class[{i}]: {:?}",
                 counts[i as usize].to_array(&private_key, &ctx)
+            );
+        });
+
+        // Assert that class 1 has the highest count since we encrypted class=1
+        let class_counts: Vec<Vec<u64>> = (0..tree.n_classes)
+            .map(|i| counts[i as usize].to_array(&private_key, &ctx))
+            .collect();
+
+        let classes = (0..tree.n_classes)
+            .map(|i| {
+                let mut c_i = vec![0; ctx.full_message_modulus() as usize];
+                if i == class {
+                    c_i[ctx.full_message_modulus() as usize - 1] = 1;
+                }
+                c_i
+            })
+            .collect::<Vec<Vec<u64>>>();
+
+        (0..tree.n_classes).for_each(|i| {
+            assert_eq!(
+                class_counts[i as usize], classes[i as usize],
+                "Class counts don't match expected values for class {}",
+                i
             );
         });
 

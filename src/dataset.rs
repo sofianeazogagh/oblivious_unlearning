@@ -1,14 +1,12 @@
-use std::vec;
 use csv;
+use std::vec;
 
 //  import Query from probonite.rs
 use crate::probonite::Query;
 use rand::seq::SliceRandom;
 
-
 use revolut::{Context, PrivateKey, LUT};
 use tfhe::{core_crypto::prelude::LweCiphertext, shortint::parameters::*};
-
 
 type LWE = LweCiphertext<Vec<u64>>;
 
@@ -45,13 +43,7 @@ impl EncryptedDataset {
             panic!("Number of features exceeds the modulus");
         }
 
-    
-
-        Self {
-            records,
-            f,
-            n,
-        }
+        Self { records, f, n }
     }
 
     pub fn split(&self, train: f64) -> (EncryptedDataset, EncryptedDataset) {
@@ -64,8 +56,14 @@ impl EncryptedDataset {
         let train_indices = &indices[0..train_size];
         let test_indices = &indices[train_size..];
 
-        let train_records: Vec<Query> = train_indices.iter().map(|&i| self.records[i].clone()).collect();
-        let test_records: Vec<Query> = test_indices.iter().map(|&i| self.records[i].clone()).collect();
+        let train_records: Vec<Query> = train_indices
+            .iter()
+            .map(|&i| self.records[i].clone())
+            .collect();
+        let test_records: Vec<Query> = test_indices
+            .iter()
+            .map(|&i| self.records[i].clone())
+            .collect();
 
         (
             EncryptedDataset {
@@ -79,7 +77,5 @@ impl EncryptedDataset {
                 n: (n - train_size) as u64,
             },
         )
-
     }
-
 }
