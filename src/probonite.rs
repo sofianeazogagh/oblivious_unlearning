@@ -303,7 +303,7 @@ pub struct QueryLUT {
     pub features: LUT,
 }
 
-fn probolut(tree: &mut TreeLUT, query: &QueryLUT, public_key: &PublicKey, ctx: &Context) {
+fn probolut(tree: &TreeLUT, query: &QueryLUT, public_key: &PublicKey, ctx: &Context) -> Vec<LUT> {
     // First stage
     let private_key = key(ctx.parameters());
     let index = tree.root.feature_index;
@@ -326,19 +326,23 @@ fn probolut(tree: &mut TreeLUT, query: &QueryLUT, public_key: &PublicKey, ctx: &
         private_key.debug_lwe("selector_updated", &selector, ctx);
     }
 
-    // Last stage
-    private_key.debug_lwe("selector", &selector, ctx);
-    private_key.debug_lwe("class[0]", &query.class[0], ctx);
-    private_key.debug_lwe("class[1]", &query.class[1], ctx);
-    private_key.debug_lwe("class[2]", &query.class[2], ctx);
+    // // Last stage
+    // private_key.debug_lwe("selector", &selector, ctx);
+    // private_key.debug_lwe("class[0]", &query.class[0], ctx);
+    // private_key.debug_lwe("class[1]", &query.class[1], ctx);
+    // private_key.debug_lwe("class[2]", &query.class[2], ctx);
+
+    let mut counts = tree.leaves.clone();
     for c in 0..tree.n_classes {
         public_key.blind_array_increment(
-            &mut tree.leaves[c as usize],
+            &mut counts[c as usize],
             &selector,
             &query.class[c as usize],
             ctx,
         );
     }
+
+    counts
 }
 
 #[cfg(test)]
@@ -372,7 +376,7 @@ mod tests {
                 private_key.allocate_and_encrypt_lwe(0, &mut ctx),
             ],
             features: LUT::from_vec(
-                &vec![31; ctx.full_message_modulus() as usize],
+                &vec![0; ctx.full_message_modulus() as usize],
                 &private_key,
                 &mut ctx,
             ),
@@ -380,11 +384,18 @@ mod tests {
 
         // Run probolut
         let start = Instant::now();
-        probolut(&mut tree, &query, &public_key, &ctx);
+        let counts = probolut(&tree, &query, &public_key, &ctx);
         let end = Instant::now();
         println!("Time taken: {:?}", end.duration_since(start));
 
-        tree.print_tree(&private_key, &ctx);
+        (0..tree.n_classes).for_each(|i| {
+            println!(
+                "class[{i}]: {:?}",
+                counts[i as usize].to_array(&private_key, &ctx)
+            );
+        });
+
+        // tree.print_tree(&private_key, &ctx);
     }
 
     #[test]
@@ -402,7 +413,7 @@ mod tests {
         let mut tree = Tree::generate_random_tree(TREE_DEPTH, N_CLASSES, f, &ctx);
 
         // Create a query with test data
-        let feature_vector = vec![1; ctx.full_message_modulus() as usize];
+        let feature_vector = vec![31; ctx.full_message_modulus() as usize];
         let features_vector = LUT::from_vec(&feature_vector, &private_key, &mut ctx);
         let class = private_key.allocate_and_encrypt_lwe(0, &mut ctx);
 
@@ -413,9 +424,13 @@ mod tests {
 
         // Run probonite
         let start = Instant::now();
-        let _ = probonite(&mut tree, &query, &public_key, &ctx);
+        let counts = probonite(&tree, &query, &public_key, &ctx);
         let end = Instant::now();
         println!("Time probonite taken: {:?}", end.duration_since(start));
+
+        let luts_samples = vec![counts];
+
+        tree.sum_samples_luts_counts(&luts_samples, &public_key);
 
         tree.print_tree(&private_key, &ctx);
     }
