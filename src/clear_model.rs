@@ -263,20 +263,25 @@ pub fn generate_clear_random_tree(
     let mut rng = rand::thread_rng();
 
     // the feature index should be selected among the possible feature indices
-    tree.root.feature_index = rng.gen_range(0..f);
+    tree.root.feature_index = rng.gen_range(0..=f);
     let mut feature_domain = column_domains[tree.root.feature_index as usize];
 
-    tree.root.threshold = rng.gen_range(feature_domain.0..feature_domain.1);
+    tree.root.threshold = rng.gen_range(feature_domain.0..=feature_domain.1);
 
     for idx in 1..depth {
         let mut level = Vec::new();
         for j in 0..(2u64.pow(idx as u32) as usize) {
-            let feature_index = rng.gen_range(0..f);
+            let feature_index = rng.gen_range(0..=f);
+            let mut threshold = 0;
+            if feature_domain.0 == feature_domain.1 {
+                threshold = feature_domain.0;
+            } else {
+                threshold = rng.gen_range(feature_domain.0..=feature_domain.1);
+            }
             feature_domain = column_domains[feature_index as usize];
-            // print!("{:?}", feature_domain);
             let node = InternalNode {
                 id: j as u64,
-                threshold: rng.gen_range(feature_domain.0..feature_domain.1),
+                threshold: threshold,
                 feature_index,
             };
             level.push(node);
