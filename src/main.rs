@@ -8,6 +8,9 @@ use probonite::*;
 mod model;
 use model::*;
 
+mod xt_probolut;
+use xt_probolut::*;
+
 mod dataset;
 use dataset::*;
 
@@ -72,13 +75,13 @@ fn test_probonite() {
 }
 
 fn example_private_training() {
-    const TREE_DEPTH: u64 = 3;
+    const TREE_DEPTH: u64 = 4;
     const N_CLASSES: u64 = 3;
     const PRECISION_BITS: u64 = 4;
-    const DATASET_NAME: &str = "iris_4bits";
+    const DATASET_NAME: &str = "iris_2bits";
     // const DATASET_NAME: &str = "wine_4bits";
-    const M: u64 = 64;
-    const NUM_EXPERIMENTS: u64 = 10;
+    const M: u64 = 1;
+    const NUM_EXPERIMENTS: u64 = 1;
 
     let mut ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
     let private_key = key(ctx.parameters());
@@ -91,7 +94,8 @@ fn example_private_training() {
     );
 
     let (train_dataset, test_dataset) = dataset.split(0.8);
-    let train_size: u64 = train_dataset.n;
+    // let train_size: u64 = train_dataset.n;
+    let train_size: u64 = 10;
     let test_size: u64 = test_dataset.n;
 
     let num_experiments = 1;
@@ -104,7 +108,7 @@ fn example_private_training() {
         println!("\n --------- Training the forest ---------");
         let start = Instant::now();
 
-        let forest: Vec<(Tree, Vec<Vec<LUT>>)> = (0..M)
+        let mut forest: Vec<(Tree, Vec<Vec<LUT>>)> = (0..M)
             .into_par_iter()
             .map(|i| {
                 let mut tree = Tree::generate_random_tree(TREE_DEPTH, N_CLASSES, dataset.f, &ctx);
@@ -141,6 +145,11 @@ fn example_private_training() {
             })
             .collect::<Vec<_>>();
 
+        // // Sum the LUTs counts for each tree
+        // forest.iter_mut().for_each(|(tree, luts_samples)| {
+        //     tree.sum_samples_luts_counts(luts_samples, &public_key);
+        // });
+
         // Client assign labels to the leaves. assigned_labels[i][j] is the label assigned to the j-th leaf of the i-th tree
         let mut assigned_labels = Vec::new();
         for i in 0..M {
@@ -169,12 +178,7 @@ fn example_private_training() {
         Dataset classes: {}, \
         Tree depth: {}, \
         Number of trees: {}",
-            (ctx.full_message_modulus() as u64).ilog2(),
-            train_dataset.n,
-            train_dataset.f,
-            N_CLASSES,
-            TREE_DEPTH,
-            M
+            PRECISION_BITS, train_dataset.n, train_dataset.f, N_CLASSES, TREE_DEPTH, M
         );
         println!("[SUMMARY] : Forest built in {:?}", end);
 
@@ -183,7 +187,10 @@ fn example_private_training() {
         if EXPORT_FOREST {
             for i in 0..M {
                 forest[i as usize].0.save_to_file(
-                    &format!("{DATASET_NAME}_forest/{TREE_DEPTH}_depth/experiment_{}/tree_{}.json", experiment, i),
+                    &format!(
+                        "{DATASET_NAME}_forest/{TREE_DEPTH}_depth/experiment_{}/tree_{}.json",
+                        experiment, i
+                    ),
                     &ctx,
                 );
             }
@@ -339,7 +346,7 @@ fn example_clear_training() {
     let (train_dataset, test_dataset) = clear_dataset.split(0.8);
     let column_domains = clear_dataset.column_domains.clone();
     let n_classes = column_domains[column_domains.len() - 1].1 + 1;
-    let n_trees = 10;
+    let n_trees = 1;
 
     let mut forest: Vec<ClearTree> = Vec::new();
 
@@ -380,6 +387,8 @@ fn example_clear_training() {
 
 fn main() {
     // example_clear_training();
-    example_private_training();
+    // example_private_training();
     // test_probonite();
+
+    xt_probolut::example_xt_training_probolut();
 }
