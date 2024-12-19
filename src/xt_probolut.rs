@@ -1,12 +1,14 @@
 use std::time::Instant;
 
-use crate::{probolut_inference, probolut_training, probonite_inference, EncryptedDatasetLut, Tree, TreeLUT};
+use crate::dataset::*;
+use crate::model::*;
+use crate::probolut::*;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use revolut::{key, Context, PrivateKey, LUT};
 
 use tfhe::{core_crypto::prelude::LweCiphertext, shortint::parameters::*};
 
-pub fn example_xt_training_probolut(){
+pub fn example_xt_training_probolut() {
     const TREE_DEPTH: u64 = 3;
     const N_CLASSES: u64 = 3;
     const PRECISION_BITS: u64 = 4;
@@ -40,28 +42,30 @@ pub fn example_xt_training_probolut(){
         // Server trains the forest
         println!("\n --------- Training the forest ---------");
         let start = Instant::now();
-        
-        let forest:Vec<(TreeLUT, Vec<Vec<LUT>>)> = (0..M)
+
+        let forest: Vec<(TreeLUT, Vec<Vec<LUT>>)> = (0..M)
             .into_par_iter()
             .map(|i| {
                 // let tree = TreeLUT::generate_random_tree(TREE_DEPTH, N_CLASSES, dataset.f, &ctx);
-                let classical_tree = Tree::generate_random_tree(TREE_DEPTH, N_CLASSES, train_dataset.f, &ctx);
+                let classical_tree =
+                    Tree::generate_random_tree(TREE_DEPTH, N_CLASSES, train_dataset.f, &ctx);
 
                 let tree = TreeLUT::from_tree(&classical_tree, TREE_DEPTH, N_CLASSES, &ctx);
                 // tree.print_tree(private_key, &ctx);
-                
+
                 let luts_samples = (0..train_size)
                     .into_par_iter()
                     .map(|j| {
                         println!("Training Tree[{}] --- sample [{}]", i, j);
                         let query = &train_dataset.records[j as usize];
-                
+
                         probolut_training(&tree, query, &public_key, &ctx)
                     })
                     .collect::<Vec<_>>();
 
                 (tree, luts_samples)
-            }).collect();
+            })
+            .collect();
 
         let mut result = Vec::new();
         forest.iter().for_each(|(tree, luts_samples)| {
@@ -82,14 +86,14 @@ pub fn example_xt_training_probolut(){
 
         for i in 0..M {
             let mut tree_cout = Vec::new();
-            for j in 0..N_CLASSES{
+            for j in 0..N_CLASSES {
                 let mut class_count = Vec::new();
-                for k in 0..2u32.pow(TREE_DEPTH as u32){
+                for k in 0..2u32.pow(TREE_DEPTH as u32) {
                     let mut count = 0;
-                    for l in 0..train_size{
+                    for l in 0..train_size {
                         count += result[i as usize][l as usize][j as usize][k as usize];
                     }
-                    
+
                     class_count.push(count);
                 }
                 tree_cout.push(class_count);
@@ -97,11 +101,11 @@ pub fn example_xt_training_probolut(){
             summed_counts.push(tree_cout);
         }
 
-    //     // Server tests the forest
+        //     // Server tests the forest
         println!("\n --------- Testing the forest ---------");
         let mut correct = 0;
         let mut total = 0;
-        let results:Vec<Vec<LweCiphertext<Vec<u64>>>> = (0..M)
+        let results: Vec<Vec<LweCiphertext<Vec<u64>>>> = (0..M)
             .into_par_iter()
             .map(|i| {
                 let tree = &forest[i as usize].0;
@@ -112,7 +116,6 @@ pub fn example_xt_training_probolut(){
                     let query = &test_dataset.records[j as usize];
                     let selector = probolut_inference(tree, &query.features, &public_key, &ctx);
                     accs.push(selector);
-        
                 }
                 accs
             })
@@ -137,19 +140,22 @@ pub fn example_xt_training_probolut(){
             for tree_idx in 0..M {
                 let selected_leaf = selected_leaves[tree_idx as usize][sample_idx as usize];
                 for class_idx in 0..N_CLASSES {
-                    votes[class_idx as usize] += summed_counts[tree_idx as usize][class_idx as usize][selected_leaf as usize];
+                    votes[class_idx as usize] += summed_counts[tree_idx as usize]
+                        [class_idx as usize][selected_leaf as usize];
                 }
             }
 
             let (predicted_label, _) = votes.iter().enumerate().max_by_key(|x| x.1).unwrap();
             let mut true_label = 0;
-            for c in (0..N_CLASSES)
-            {
-                let one_label = private_key.decrypt_lwe(&test_dataset.records[sample_idx as usize].class[c as usize], &ctx);
+            for c in (0..N_CLASSES) {
+                let one_label = private_key.decrypt_lwe(
+                    &test_dataset.records[sample_idx as usize].class[c as usize],
+                    &ctx,
+                );
                 if one_label == 1 {
                     true_label = c;
                     break;
-                }   
+                }
             }
 
             if predicted_label == true_label as usize {

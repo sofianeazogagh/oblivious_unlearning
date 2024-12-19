@@ -5,6 +5,7 @@ use std::vec;
 use crate::probonite::Query;
 use rand::seq::SliceRandom;
 
+use crate::clear_model::ClearDataset;
 use revolut::{Context, PrivateKey, LUT};
 use tfhe::{core_crypto::prelude::LweCiphertext, shortint::parameters::*};
 
@@ -118,31 +119,51 @@ impl EncryptedSample {
     }
 }
 
-pub struct EncryptedDatasetLut{
+pub struct EncryptedDatasetLut {
     pub records: Vec<EncryptedSample>,
     pub f: u64,
     pub n_classes: u64,
-
+    pub features_domain: (u64, u64),
 }
 
 impl EncryptedDatasetLut {
-    pub fn from_file(filepath: String, private_key: &PrivateKey, ctx: &mut Context, n_classes: u64) -> Self {
+    pub fn from_file(
+        filepath: String,
+        private_key: &PrivateKey,
+        ctx: &mut Context,
+        n_classes: u64,
+    ) -> Self {
         let mut rdr = csv::Reader::from_path(filepath).unwrap();
         let mut records = Vec::new();
         let mut f = 0;
+        let mut features_domain = (std::u64::MIN, std::u64::MAX);
 
         for result in rdr.records() {
             let record = result.unwrap();
             let mut label: u64 = 0;
             let mut record_vec = Vec::new();
             for (i, field) in record.iter().enumerate() {
+                let value = field.parse::<u64>().unwrap();
                 if i == record.len() - 1 {
-                    label = field.parse::<u64>().unwrap();
+                    label = value;
                 } else {
-                    record_vec.push(field.parse::<u64>().unwrap());
+                    record_vec.push(value);
+
+                    if value < features_domain.0 {
+                        features_domain.0 = value;
+                    }
+                    if value > features_domain.1 {
+                        features_domain.1 = value;
+                    }
                 }
             }
-            records.push(EncryptedSample::make_encrypted_sample(&record_vec, &label, n_classes, private_key, ctx));
+            records.push(EncryptedSample::make_encrypted_sample(
+                &record_vec,
+                &label,
+                n_classes,
+                private_key,
+                ctx,
+            ));
             f = record_vec.len() as u64;
         }
 
@@ -150,7 +171,12 @@ impl EncryptedDatasetLut {
             panic!("Number of features exceeds the modulus");
         }
 
-        Self { records, f, n_classes }
+        Self {
+            records,
+            f,
+            n_classes,
+            features_domain,
+        }
     }
 
     pub fn split(&self, train: f64) -> (EncryptedDatasetLut, EncryptedDatasetLut) {
@@ -177,12 +203,40 @@ impl EncryptedDatasetLut {
                 records: train_records,
                 f: self.f,
                 n_classes: self.n_classes,
+                features_domain: self.features_domain,
             },
             EncryptedDatasetLut {
                 records: test_records,
                 f: self.f,
                 n_classes: self.n_classes,
+                features_domain: self.features_domain,
             },
         )
+    }
+
+    pub fn from_clear_dataset(
+        dataset: &ClearDataset,
+        private_key: &PrivateKey,
+        ctx: &mut Context,
+    ) -> Self {
+        let records = dataset
+            .records
+            .iter()
+            .map(|sample| {
+                EncryptedSample::make_encrypted_sample(
+                    &sample.features,
+                    &sample.class,
+                    dataset.n_classes,
+                    private_key,
+                    ctx,
+                )
+            })
+            .collect();
+        Self {
+            records,
+            f: dataset.f,
+            n_classes: dataset.n_classes,
+            features_domain: dataset.features_domain,
+        }
     }
 }

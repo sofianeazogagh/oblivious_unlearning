@@ -1,5 +1,5 @@
 use bincode::de;
-use rand::{Rng, RngCore};
+use rand::{distributions::uniform::SampleBorrow, Rng, RngCore};
 
 pub struct Root {
     pub threshold: u64,
@@ -26,12 +26,12 @@ impl InternalNode {
 
 pub struct Leaf {
     pub counts: Vec<u64>,
-    pub label: u64,
+    pub id: u64,
 }
 
 impl Leaf {
     pub fn print(&self, n_classes: u64) {
-        print!("({:?}, {})", &self.counts[..n_classes as usize], self.label);
+        print!("({:?}, {})", &self.counts[..n_classes as usize], self.id);
     }
 }
 
@@ -57,61 +57,7 @@ impl ClearTree {
         }
     }
 
-    pub fn update_statistic(&mut self, sample: Vec<u64>) {
-        let mut current_node = &InternalNode {
-            id: 0,
-            threshold: 0,
-            feature_index: 0,
-        };
-
-        if self.root.threshold <= sample[self.root.feature_index as usize] {
-            current_node = &self.nodes[0][0];
-        } else {
-            current_node = &self.nodes[0][1];
-        }
-
-        // current_node.print();
-
-        for idx in 1..self.depth - 1 {
-            if current_node.threshold <= sample[current_node.feature_index as usize] {
-                current_node = &self.nodes[idx as usize][2 * current_node.id as usize];
-            } else {
-                current_node = &self.nodes[idx as usize][2 * current_node.id as usize + 1];
-            }
-            // current_node.print();
-        }
-
-        let mut selected_leaf = &mut Leaf {
-            counts: vec![0; self.n_classes as usize],
-            label: 0,
-        };
-
-        if current_node.threshold <= sample[current_node.feature_index as usize] {
-            selected_leaf = &mut self.leaves[2 * current_node.id as usize];
-        } else {
-            selected_leaf = &mut self.leaves[2 * current_node.id as usize + 1];
-        }
-
-        let class_index = sample[sample.len() - 1] as usize;
-
-        selected_leaf.counts[class_index] += 1;
-    }
-
-    pub fn assign_label_to_leafs(&mut self) {
-        for leaf in &mut self.leaves {
-            let mut max = 0;
-            let mut max_index = 0;
-            for (i, count) in leaf.counts.iter().enumerate() {
-                if *count > max {
-                    max = *count;
-                    max_index = i;
-                }
-            }
-            leaf.label = max_index as u64;
-        }
-    }
-
-    pub fn infer_label(&self, record: Vec<u64>) -> u64 {
+    pub fn infer(&mut self, record: Vec<u64>) -> &mut Leaf {
         let mut current_node = &InternalNode {
             id: 0,
             threshold: 0,
@@ -132,17 +78,23 @@ impl ClearTree {
             }
         }
 
-        let selected_leaf = if current_node.threshold <= record[current_node.feature_index as usize]
-        {
-            &self.leaves[2 * current_node.id as usize]
-        } else {
-            &self.leaves[2 * current_node.id as usize + 1]
-        };
+        let mut selected_leaf: &mut Leaf =
+            if current_node.threshold <= record[current_node.feature_index as usize] {
+                &mut self.leaves[2 * current_node.id as usize]
+            } else {
+                &mut self.leaves[2 * current_node.id as usize + 1]
+            };
 
-        selected_leaf.label
+        selected_leaf
     }
 
-    pub fn print_tree(&self) {
+    pub fn update_statistic(&mut self, sample: Vec<u64>) {
+        let class_index = sample[sample.len() - 1] as usize;
+        let selected_leaf = self.infer(sample);
+        selected_leaf.counts[class_index] += 1;
+    }
+
+    pub fn print(&self) {
         print!("---------- (t,f) ----------\n");
         self.root.print();
         for level in &self.nodes {
@@ -158,9 +110,27 @@ impl ClearTree {
     }
 }
 
+#[derive(Clone)]
+pub struct ClearSample {
+    pub features: Vec<u64>,
+    pub class: u64,
+}
+
+impl ClearSample {
+    pub fn print(&self) {
+        print!("\n([");
+        for feature in &self.features {
+            print!("{},", feature);
+        }
+        print!("],{})", self.class);
+    }
+}
+
+#[derive(Clone)]
 pub struct ClearDataset {
-    pub records: Vec<Vec<u64>>,
-    pub column_domains: Vec<(u64, u64)>,
+    pub records: Vec<ClearSample>,
+    pub features_domain: (u64, u64),
+    pub n_classes: u64,
     pub f: u64,
     pub n: u64,
 }
@@ -169,43 +139,49 @@ impl ClearDataset {
     pub fn from_file(filepath: String) -> Self {
         let mut rdr = csv::Reader::from_path(filepath).unwrap();
         let mut records = Vec::new();
-        let mut column_domains: Vec<(u64, u64)> = Vec::new();
         let mut n = 0;
+
+        let mut min = std::u64::MAX;
+        let mut max = std::u64::MIN;
+        let mut classes = Vec::new();
 
         for result in rdr.records() {
             let record = result.unwrap();
             let mut record_vec = Vec::new();
+            let mut class = 0;
+
             for (i, field) in record.iter().enumerate() {
-                record_vec.push(field.parse::<u64>().unwrap());
+                let value = field.parse::<u64>().unwrap();
+
+                if i == record.len() - 1 {
+                    class = value;
+                    if !classes.contains(&class) {
+                        classes.push(class);
+                    }
+                } else {
+                    record_vec.push(value);
+                }
+
+                if value < min {
+                    min = value;
+                }
+                if value > max {
+                    max = value;
+                }
             }
-            records.push(record_vec);
-            n += 1;
+            records.push(ClearSample {
+                features: record_vec,
+                class,
+            });
         }
 
-        let mut column_domains = Vec::new();
-        for i in 0..records[0].len() {
-            let mut min = std::u64::MAX;
-            let mut max = std::u64::MIN;
-            for record in &records {
-                if record[i] < min {
-                    min = record[i];
-                }
-                if record[i] > max {
-                    max = record[i];
-                }
-            }
-
-            if max == 0 {
-                max = 1
-            }
-            column_domains.push((min, max));
-        }
-
-        let f = column_domains.len() as u64 - 1;
+        let f = records[0].features.len() as u64;
+        let features_domain = (min, max);
 
         Self {
             records,
-            column_domains,
+            features_domain,
+            n_classes: classes.len() as u64,
             f,
             n,
         }
@@ -234,18 +210,23 @@ impl ClearDataset {
         for idx in test_indices {
             test_records.push(self.records[idx].clone());
         }
+
         let train_dataset = ClearDataset {
             records: train_records,
-            column_domains: self.column_domains.clone(),
+            features_domain: self.features_domain,
+            n_classes: self.n_classes,
             f: self.f,
             n: n_train,
         };
+
         let test_dataset = ClearDataset {
             records: test_records,
-            column_domains: self.column_domains.clone(),
+            features_domain: self.features_domain,
+            n_classes: self.n_classes,
             f: self.f,
             n: n as u64 - n_train,
         };
+
         (train_dataset, test_dataset)
     }
 }
@@ -253,7 +234,7 @@ impl ClearDataset {
 pub fn generate_clear_random_tree(
     depth: u64,
     n_classes: u64,
-    column_domains: Vec<(u64, u64)>,
+    features_domain: (u64, u64),
     f: u64,
 ) -> ClearTree {
     let mut tree = ClearTree::new();
@@ -263,22 +244,21 @@ pub fn generate_clear_random_tree(
     let mut rng = rand::thread_rng();
 
     // the feature index should be selected among the possible feature indices
-    tree.root.feature_index = rng.gen_range(0..=f);
-    let mut feature_domain = column_domains[tree.root.feature_index as usize];
+    tree.root.feature_index = rng.gen_range(0..f);
 
-    tree.root.threshold = rng.gen_range(feature_domain.0..=feature_domain.1);
+    tree.root.threshold = rng.gen_range(features_domain.0..=features_domain.1);
 
     for idx in 1..depth {
         let mut level = Vec::new();
         for j in 0..(2u64.pow(idx as u32) as usize) {
-            let feature_index = rng.gen_range(0..=f);
+            let feature_index = rng.gen_range(0..f);
             let mut threshold = 0;
-            if feature_domain.0 == feature_domain.1 {
-                threshold = feature_domain.0;
+            if features_domain.0 == features_domain.1 {
+                threshold = features_domain.0;
             } else {
-                threshold = rng.gen_range(feature_domain.0..=feature_domain.1);
+                threshold = rng.gen_range(features_domain.0..=features_domain.1);
             }
-            feature_domain = column_domains[feature_index as usize];
+
             let node = InternalNode {
                 id: j as u64,
                 threshold: threshold,
@@ -289,9 +269,9 @@ pub fn generate_clear_random_tree(
         tree.nodes.push(level);
     }
 
-    for _ in 0..(2u64.pow(depth as u32) as usize) {
+    for i in 0..(2u64.pow(depth as u32) as usize) {
         let counts = vec![0; n_classes as usize];
-        let leaf = Leaf { counts, label: 0 };
+        let leaf = Leaf { counts, id: 0 };
         tree.leaves.push(leaf);
     }
 
