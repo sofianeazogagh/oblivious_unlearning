@@ -66,7 +66,7 @@ impl Tree {
         tree.n_classes = n_classes;
 
         // Generate the root
-        tree.root.threshold = rand::random::<u64>() % ctx.full_message_modulus() as u64;
+        tree.root.threshold = rand::random::<u64>() % f as u64;
         tree.root.feature_index = rand::random::<u64>() % f;
 
         // Generate the nodes
@@ -79,7 +79,7 @@ impl Tree {
 
             for _ in 0..num_nodes {
                 stage.push(InternalNode {
-                    threshold: rand::random::<u64>() % ctx.full_message_modulus() as u64,
+                    threshold: rand::random::<u64>() % f as u64,
                     feature_index: rand::random::<u64>() % f,
                 });
             }
