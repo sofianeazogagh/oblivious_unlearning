@@ -1,5 +1,4 @@
-use bincode::de;
-use rand::{Rng, RngCore};
+use rand::Rng;
 
 pub struct Root {
     pub threshold: u64,
@@ -58,12 +57,7 @@ impl ClearTree {
     }
 
     pub fn update_statistic(&mut self, sample: Vec<u64>) {
-        let mut current_node = &InternalNode {
-            id: 0,
-            threshold: 0,
-            feature_index: 0,
-        };
-
+        let mut current_node: &InternalNode;
         if self.root.threshold <= sample[self.root.feature_index as usize] {
             current_node = &self.nodes[0][0];
         } else {
@@ -81,11 +75,7 @@ impl ClearTree {
             // current_node.print();
         }
 
-        let mut selected_leaf = &mut Leaf {
-            counts: vec![0; self.n_classes as usize],
-            label: 0,
-        };
-
+        let selected_leaf: &mut Leaf;
         if current_node.threshold <= sample[current_node.feature_index as usize] {
             selected_leaf = &mut self.leaves[2 * current_node.id as usize];
         } else {
@@ -112,12 +102,7 @@ impl ClearTree {
     }
 
     pub fn infer_label(&self, record: Vec<u64>) -> u64 {
-        let mut current_node = &InternalNode {
-            id: 0,
-            threshold: 0,
-            feature_index: 0,
-        };
-
+        let mut current_node: &InternalNode;
         if self.root.threshold <= record[self.root.feature_index as usize] {
             current_node = &self.nodes[0][0];
         } else {
@@ -169,13 +154,12 @@ impl ClearDataset {
     pub fn from_file(filepath: String) -> Self {
         let mut rdr = csv::Reader::from_path(filepath).unwrap();
         let mut records = Vec::new();
-        let mut column_domains: Vec<(u64, u64)> = Vec::new();
         let mut n = 0;
 
         for result in rdr.records() {
             let record = result.unwrap();
             let mut record_vec = Vec::new();
-            for (i, field) in record.iter().enumerate() {
+            for (_, field) in record.iter().enumerate() {
                 record_vec.push(field.parse::<u64>().unwrap());
             }
             records.push(record_vec);

@@ -2,14 +2,13 @@ use std::io::Write;
 use std::time::Instant;
 
 mod probonite;
-use bincode::{config::AllowTrailing, de};
 use probonite::*;
-
-mod model;
-use model::*;
 
 mod xt_probolut;
 use xt_probolut::*;
+
+mod model;
+use model::*;
 
 mod dataset;
 use dataset::*;
@@ -19,17 +18,19 @@ use clear_model::*;
 
 use rayon::{
     iter::{IntoParallelIterator, ParallelIterator},
-    vec,
+    ThreadPoolBuilder,
 };
-use revolut::{key, Context, PrivateKey, LUT};
+use revolut::*;
 
-use tfhe::{core_crypto::prelude::LweCiphertext, shortint::parameters::*};
+use tfhe::shortint::parameters::*;
 
-type LWE = LweCiphertext<Vec<u64>>;
-
+#[allow(dead_code)]
 const GENERATE_TREE: bool = true;
+#[allow(dead_code)]
 const EXPORT_FOREST: bool = true;
+const NUM_THREADS: usize = 1;
 
+#[allow(dead_code)]
 fn test_probonite() {
     const TREE_DEPTH: u64 = 3;
     const N_CLASSES: u64 = 3;
@@ -70,10 +71,11 @@ fn test_probonite() {
         .iter()
         .map(|lut| lut.to_array(&private_key, &ctx)[..N_CLASSES as usize].to_vec())
         .collect::<Vec<_>>();
-    let expected = [[0; N_CLASSES as usize]; 2u32.pow(TREE_DEPTH as u32) as usize];
+    // let expected = [[0; N_CLASSES as usize]; 2u32.pow(TREE_DEPTH as u32) as usize];
     println!("{:?}", results);
 }
 
+#[allow(dead_code)]
 fn example_private_training() {
     const TREE_DEPTH: u64 = 4;
     const N_CLASSES: u64 = 3;
@@ -108,10 +110,10 @@ fn example_private_training() {
         println!("\n --------- Training the forest ---------");
         let start = Instant::now();
 
-        let mut forest: Vec<(Tree, Vec<Vec<LUT>>)> = (0..M)
+        let forest: Vec<(Tree, Vec<Vec<LUT>>)> = (0..M)
             .into_par_iter()
             .map(|i| {
-                let mut tree = Tree::generate_random_tree(TREE_DEPTH, N_CLASSES, dataset.f, &ctx);
+                let tree = Tree::generate_random_tree(TREE_DEPTH, N_CLASSES, dataset.f, &ctx);
                 let start_one_tree = Instant::now();
                 let luts_samples: Vec<Vec<LUT>> = (0..train_size)
                     .into_par_iter()
@@ -134,7 +136,7 @@ fn example_private_training() {
         // Client decrypts the counts
         let decrypted_counts = forest
             .iter()
-            .map(|(tree, luts_samples)| {
+            .map(|(_, luts_samples)| {
                 decrypt_counts(
                     luts_samples.clone(),
                     N_CLASSES,
@@ -247,11 +249,11 @@ fn example_private_training() {
             for tree_idx in 0..M {
                 let sample_leaves = &decrypted_accumulators[tree_idx as usize][sample_idx as usize];
                 let mut selected_leaf = 0;
-                let mut found = false;
+                let mut _found = false;
                 for i in 0..2u32.pow(TREE_DEPTH as u32) {
                     if sample_leaves[i as usize] == 1 {
                         selected_leaf = i;
-                        found = true;
+                        _found = true;
                         break;
                     }
                 }
@@ -322,7 +324,7 @@ pub fn decrypt_counts(
     }
 
     let mut result_counts: Vec<Vec<u64>> = Vec::new();
-    for i in 0..results[0].len() {
+    for _ in 0..results[0].len() {
         result_counts.push(Vec::new());
     }
 
@@ -339,8 +341,9 @@ pub fn decrypt_counts(
     result_counts
 }
 
+#[allow(dead_code)]
 fn example_clear_training() {
-    let mut clear_dataset = ClearDataset::from_file("data/iris_2bits.csv".to_string());
+    let clear_dataset = ClearDataset::from_file("data/iris_2bits.csv".to_string());
 
     // get the train and test datasets
     let (train_dataset, test_dataset) = clear_dataset.split(0.8);
@@ -351,7 +354,7 @@ fn example_clear_training() {
     let mut forest: Vec<ClearTree> = Vec::new();
 
     // Training the forest
-    for i in 0..n_trees {
+    for _ in 0..n_trees {
         let mut clear_tree =
             generate_clear_random_tree(4, n_classes, column_domains.clone(), train_dataset.f);
         train_dataset.records.iter().for_each(|record| {
@@ -386,9 +389,13 @@ fn example_clear_training() {
 }
 
 fn main() {
+    ThreadPoolBuilder::new()
+        .num_threads(NUM_THREADS)
+        .build_global()
+        .unwrap();
+
     // example_clear_training();
     // example_private_training();
     // test_probonite();
-
-    xt_probolut::example_xt_training_probolut();
+    example_xt_training_probolut();
 }

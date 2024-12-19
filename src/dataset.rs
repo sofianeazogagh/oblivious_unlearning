@@ -5,10 +5,7 @@ use std::vec;
 use crate::probonite::Query;
 use rand::seq::SliceRandom;
 
-use revolut::{Context, PrivateKey, LUT};
-use tfhe::{core_crypto::prelude::LweCiphertext, shortint::parameters::*};
-
-type LWE = LweCiphertext<Vec<u64>>;
+use revolut::{Context, PrivateKey, LUT, LWE};
 
 pub struct EncryptedDataset {
     pub records: Vec<Query>,
@@ -118,15 +115,19 @@ impl EncryptedSample {
     }
 }
 
-pub struct EncryptedDatasetLut{
+pub struct EncryptedDatasetLut {
     pub records: Vec<EncryptedSample>,
     pub f: u64,
     pub n_classes: u64,
-
 }
 
 impl EncryptedDatasetLut {
-    pub fn from_file(filepath: String, private_key: &PrivateKey, ctx: &mut Context, n_classes: u64) -> Self {
+    pub fn from_file(
+        filepath: String,
+        private_key: &PrivateKey,
+        ctx: &mut Context,
+        n_classes: u64,
+    ) -> Self {
         let mut rdr = csv::Reader::from_path(filepath).unwrap();
         let mut records = Vec::new();
         let mut f = 0;
@@ -142,7 +143,13 @@ impl EncryptedDatasetLut {
                     record_vec.push(field.parse::<u64>().unwrap());
                 }
             }
-            records.push(EncryptedSample::make_encrypted_sample(&record_vec, &label, n_classes, private_key, ctx));
+            records.push(EncryptedSample::make_encrypted_sample(
+                &record_vec,
+                &label,
+                n_classes,
+                private_key,
+                ctx,
+            ));
             f = record_vec.len() as u64;
         }
 
@@ -150,7 +157,11 @@ impl EncryptedDatasetLut {
             panic!("Number of features exceeds the modulus");
         }
 
-        Self { records, f, n_classes }
+        Self {
+            records,
+            f,
+            n_classes,
+        }
     }
 
     pub fn split(&self, train: f64) -> (EncryptedDatasetLut, EncryptedDatasetLut) {
