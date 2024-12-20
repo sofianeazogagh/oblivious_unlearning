@@ -8,7 +8,6 @@ use rand::seq::SliceRandom;
 use crate::clear_model::ClearDataset;
 use revolut::{Context, PrivateKey, LUT};
 use tfhe::{core_crypto::prelude::LweCiphertext, shortint::parameters::*};
-
 type LWE = LweCiphertext<Vec<u64>>;
 
 pub struct EncryptedDataset {
@@ -109,6 +108,17 @@ impl EncryptedSample {
             class: class_lwes,
             features: feature_lut,
         }
+    }
+
+    pub fn print(&self, private_key: &PrivateKey, ctx: &mut Context, n_classes: u64) {
+        print!("(");
+        let features_vec: Vec<u64> = self.features.to_array(private_key, ctx).to_vec();
+        print!("{:?}", &features_vec[..n_classes as usize]);
+        print!(", [");
+        self.class.iter().for_each(|lwe| {
+            print!(", {:?}", private_key.decrypt_lwe(lwe, ctx));
+        });
+        print!("])\n");
     }
 
     pub fn clone(&self) -> Self {
@@ -237,6 +247,12 @@ impl EncryptedDatasetLut {
             f: dataset.f,
             n_classes: dataset.n_classes,
             features_domain: dataset.features_domain,
+        }
+    }
+
+    pub fn print(&self, private_key: &PrivateKey, ctx: &mut Context) {
+        for record in &self.records {
+            record.print(private_key, ctx, self.n_classes);
         }
     }
 }

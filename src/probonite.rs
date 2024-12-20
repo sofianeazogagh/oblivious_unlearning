@@ -1,16 +1,21 @@
+#[allow(unused_imports)]
 use std::time::Instant;
 
+#[allow(unused_imports)]
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
+#[allow(unused_imports)]
 use crate::dataset::*;
 // TFHE
+#[allow(unused_imports)]
 use tfhe::core_crypto::prelude::*;
 
 // REVOLUT
+#[allow(unused_imports)]
 use revolut::*;
-
 type LWE = LweCiphertext<Vec<u64>>;
 
+#[allow(unused_imports)]
 use crate::model::*;
 
 const DEBUG: bool = false;
@@ -21,6 +26,7 @@ pub struct Query {
 }
 
 impl Query {
+    #[allow(dead_code)]
     pub fn make_query(
         feature_vector: &Vec<u64>,
         class: &u64,
@@ -35,6 +41,7 @@ impl Query {
         }
     }
 
+    #[allow(dead_code)]
     pub fn clone(&self) -> Self {
         Self {
             class: self.class.clone(),
@@ -43,6 +50,7 @@ impl Query {
     }
 }
 
+#[allow(dead_code)]
 pub fn next_accumulators(
     accumulators: &Vec<LWE>,
     selector_bit: &LWE,
@@ -61,6 +69,7 @@ pub fn next_accumulators(
     nexts_accumulators
 }
 
+#[allow(dead_code)]
 pub fn blind_node_selection(
     nodes: &Vec<InternalNode>,
     accumulators: &Vec<LWE>,
@@ -82,6 +91,7 @@ pub fn blind_node_selection(
     (selected_threshold, selected_feature_index)
 }
 
+#[allow(dead_code)]
 pub fn blind_leaf_increment(
     accumulators: &Vec<LWE>,
     sample_class: &LWE,
@@ -106,6 +116,7 @@ pub fn blind_leaf_increment(
     luts
 }
 
+#[allow(dead_code)]
 pub fn probonite(tree: &Tree, query: &Query, public_key: &PublicKey, ctx: &Context) -> Vec<LUT> {
     // Normal Probonite inference
 
@@ -122,6 +133,7 @@ pub fn probonite(tree: &Tree, query: &Query, public_key: &PublicKey, ctx: &Conte
     luts
 }
 
+#[allow(dead_code)]
 pub fn probonite_inference(
     tree: &Tree,
     query: &Query,
@@ -181,8 +193,8 @@ pub fn probonite_inference(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use revolut::*;
-    use tfhe::shortint::parameters::{PARAM_MESSAGE_4_CARRY_0, PARAM_MESSAGE_5_CARRY_0};
+    #[allow(unused_imports)]
+    use tfhe::shortint::parameters::PARAM_MESSAGE_5_CARRY_0;
 
     #[test]
     fn test_probonite() {
