@@ -328,7 +328,7 @@ pub fn example_xt_training_probolut_vs_clear() {
                     clear_dataset.f,
                 );
 
-                clear_tree.print();
+                // clear_tree.print();
                 train_dataset.records.iter().for_each(|sample| {
                     println!("Training Tree[{}] --- sample [{}]", i, sample.features[0]);
                     clear_tree.update_statistic(sample);
