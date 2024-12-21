@@ -1,7 +1,6 @@
 // DATASET
 use crate::dataset::*;
 
-use crate::helpers;
 // MODEL
 use crate::model::*;
 use crate::ClearDataset;
@@ -22,6 +21,10 @@ use std::time::Instant;
 
 // HELPERS
 use crate::helpers::*;
+use crate::{create_progress_bar, finish_progress, inc_progress, make_pb};
+
+// CONSTANTS
+use crate::VERBOSE;
 
 /// Train a single tree with a single sample.
 ///
@@ -102,26 +105,75 @@ pub fn probolut_inference(
 ///   [[0,1,0,0], [0,0,0,0], [0,0,0,0]]
 /// ]
 ///
-fn train_single_tree(
+fn generate_and_train_single_tree(
     train_dataset: &EncryptedDatasetLut,
     tree_depth: u64,
     tree_idx: u64,
     public_key: &revolut::PublicKey,
     ctx: &revolut::Context,
+    mp: &MultiProgress,
 ) -> (TreeLUT, Vec<Vec<LUT>>) {
     let classical_tree =
         Tree::generate_random_tree(tree_depth, train_dataset.n_classes, train_dataset.f, ctx);
     let tree = TreeLUT::from_tree(&classical_tree, tree_depth, train_dataset.n_classes, ctx);
 
+    let pb = make_pb(mp, train_dataset.records.len() as u64, tree_idx.to_string());
+
     let luts_samples = (0..train_dataset.records.len() as u64)
         .into_par_iter()
         .map(|j| {
-            println!("Training Tree[{}] --- sample [{}]", tree_idx, j);
-            probolut_for_training(&tree, &train_dataset.records[j as usize], public_key, ctx)
+            let result =
+                probolut_for_training(&tree, &train_dataset.records[j as usize], public_key, ctx);
+            inc_progress!(&pb);
+            result
         })
         .collect();
 
+    finish_progress!(pb);
     (tree, luts_samples)
+}
+
+/// Train a single tree with all the samples in the train dataset.
+/// Returns a tuple containing:
+/// - TreeLUT: The random decision tree generated
+/// - Vec<Vec<LUT>>: For each training sample, the n_classes LUTs
+///
+/// # Example
+///
+/// For depth = 2, n_classes = 3, train_size = 2.
+///
+/// If the samples end up in leaves (which are slots) 2 and 1 respectively, and have classes (which are LUTs) 2 and 0 respectively.
+///
+/// The returned vector will be:
+///
+/// [
+///   [[0,0,0,0], [0,0,0,0], [0,0,1,0]],
+///   [[0,1,0,0], [0,0,0,0], [0,0,0,0]]
+/// ]
+///
+fn train_single_tree(
+    train_dataset: &EncryptedDatasetLut,
+    tree: &TreeLUT,
+    tree_idx: u64,
+    public_key: &revolut::PublicKey,
+    ctx: &revolut::Context,
+    mp: &MultiProgress,
+) -> Vec<Vec<LUT>> {
+    let tree_depth = tree.depth;
+    let pb = make_pb(mp, train_dataset.records.len() as u64, tree_idx.to_string());
+
+    let luts_samples = (0..train_dataset.records.len() as u64)
+        .into_par_iter()
+        .map(|j| {
+            let result =
+                probolut_for_training(&tree, &train_dataset.records[j as usize], public_key, ctx);
+            inc_progress!(&pb);
+            result
+        })
+        .collect::<Vec<_>>();
+
+    finish_progress!(pb);
+    luts_samples
 }
 
 /// Aggregate the counts for each tree
@@ -156,18 +208,25 @@ fn test_single_tree(
     tree_idx: u64,
     public_key: &revolut::PublicKey,
     ctx: &revolut::Context,
+    mp: &MultiProgress,
 ) -> Vec<LweCiphertext<Vec<u64>>> {
-    (0..test_dataset.records.len() as u64)
+    let pb = make_pb(mp, test_dataset.records.len() as u64, tree_idx.to_string());
+
+    let results = (0..test_dataset.records.len() as u64)
         .map(|j| {
-            println!("Testing Tree[{}] --- sample [{}]", tree_idx, j);
-            probolut_inference(
+            let result = probolut_inference(
                 tree,
                 &test_dataset.records[j as usize].features,
                 public_key,
                 ctx,
-            )
+            );
+            inc_progress!(&pb);
+            result
         })
-        .collect()
+        .collect();
+
+    finish_progress!(pb);
+    results
 }
 
 fn get_true_label(
@@ -249,11 +308,16 @@ pub fn example_xt_training_probolut() {
     // let test_size = test_dataset.records.len() as u64;
 
     for _ in 0..NUM_EXPERIMENTS {
-        println!("\n --------- Training the forest ---------");
+        if VERBOSE {
+            println!("\n --------- Training the forest ---------");
+        }
         // Train forest
+        let mp = MultiProgress::new();
         let forest: Vec<(TreeLUT, Vec<Vec<LUT>>)> = (0..M)
             .into_par_iter()
-            .map(|i| train_single_tree(&train_dataset, TREE_DEPTH, i, public_key, &ctx))
+            .map(|i| {
+                generate_and_train_single_tree(&train_dataset, TREE_DEPTH, i, public_key, &ctx, &mp)
+            })
             .collect();
 
         // Aggregate counts
@@ -264,11 +328,22 @@ pub fn example_xt_training_probolut() {
             })
             .collect();
 
-        println!("\n --------- Testing the forest ---------");
+        if VERBOSE {
+            println!("\n --------- Testing the forest ---------");
+        }
         // Test forest
         let results: Vec<Vec<LweCiphertext<Vec<u64>>>> = (0..M)
             .into_par_iter()
-            .map(|i| test_single_tree(&forest[i as usize].0, &test_dataset, i, public_key, &ctx))
+            .map(|i| {
+                test_single_tree(
+                    &forest[i as usize].0,
+                    &test_dataset,
+                    i,
+                    public_key,
+                    &ctx,
+                    &mp,
+                )
+            })
             .collect();
 
         let selected_leaves = results
@@ -311,13 +386,14 @@ pub fn example_xt_training_probolut_vs_clear() {
     let public_key = &private_key.public_key;
 
     for _ in 0..NUM_EXPERIMENTS {
-        println!("\n --------- Training the clear forest ---------");
-
         let start = Instant::now();
-
         let clear_dataset = ClearDataset::from_file("data/".to_string() + DATASET_NAME + ".csv");
         let (train_dataset, test_dataset) = clear_dataset.split(0.8);
 
+        if VERBOSE {
+            println!("\n --------- Training the clear forest ---------");
+        }
+        let mp = MultiProgress::new();
         let mut clear_forest_trained = (0..M)
             .into_par_iter()
             .map(|i| {
@@ -329,11 +405,14 @@ pub fn example_xt_training_probolut_vs_clear() {
                 );
 
                 // clear_tree.print();
+                let pb = make_pb(&mp, train_dataset.records.len() as u64, i.to_string());
+
                 train_dataset.records.iter().for_each(|sample| {
-                    println!("Training Tree[{}] --- sample [{}]", i, sample.features[0]);
                     clear_tree.update_statistic(sample);
+                    inc_progress!(&pb);
                 });
 
+                finish_progress!(pb);
                 clear_tree
             })
             .collect::<Vec<_>>();
@@ -341,7 +420,12 @@ pub fn example_xt_training_probolut_vs_clear() {
         let training_time = Instant::now() - start;
         let start = Instant::now();
 
-        println!("\n --------- Testing the clear forest ---------");
+        if VERBOSE {
+            println!("\n --------- Testing the clear forest ---------");
+        }
+        let mp = MultiProgress::new();
+        let pb = make_pb(&mp, test_dataset.records.len() as u64, "_");
+
         let mut correct = 0;
         let mut total = 0;
         test_dataset.records.iter().for_each(|sample| {
@@ -359,11 +443,13 @@ pub fn example_xt_training_probolut_vs_clear() {
                 correct += 1;
             }
             total += 1;
+            inc_progress!(&pb);
         });
 
         let testing_time = Instant::now() - start;
+        finish_progress!(pb);
 
-        println!("\n-------- Accuracy -------- ");
+        println!("\n-------- Clear Forest Accuracy -------- ");
         println!("Correct: {}, Total: {}", correct, total);
         let accuracy = correct as f64 / total as f64;
         println!("\n Accuracy: {} ", accuracy);
@@ -378,7 +464,9 @@ pub fn example_xt_training_probolut_vs_clear() {
             ),
         );
 
-        println!("\n --------- Training the forest on private data ---------");
+        if VERBOSE {
+            println!("\n --------- Training the forest on private data ---------");
+        }
 
         let enc_train_dataset =
             EncryptedDatasetLut::from_clear_dataset(&train_dataset, &private_key, &mut ctx);
@@ -387,23 +475,14 @@ pub fn example_xt_training_probolut_vs_clear() {
         // Train forest
 
         let start = Instant::now();
+        let mp = MultiProgress::new();
         let forest: Vec<(TreeLUT, Vec<Vec<LUT>>)> = (0..M)
             .into_par_iter()
             .map(|i| {
                 let treelut = TreeLUT::from_clear_tree(&clear_forest_trained[i as usize], &ctx);
                 // treelut.print_tree(private_key, &ctx);
-                let luts_samples = (0..train_dataset.records.len() as u64)
-                    .into_par_iter()
-                    .map(|j| {
-                        println!("Training Tree[{}] --- sample [{}]", i, j);
-                        probolut_for_training(
-                            &treelut,
-                            &enc_train_dataset.records[j as usize],
-                            public_key,
-                            &ctx,
-                        )
-                    })
-                    .collect();
+                let luts_samples =
+                    train_single_tree(&enc_train_dataset, &treelut, i, public_key, &ctx, &mp);
 
                 (treelut, luts_samples)
             })
@@ -419,10 +498,13 @@ pub fn example_xt_training_probolut_vs_clear() {
             })
             .collect();
 
-        println!("\n --------- Testing the forest on private data ---------");
+        if VERBOSE {
+            println!("\n --------- Testing the forest on private data ---------");
+        }
         // Test forest
         let start = Instant::now();
 
+        let mp = MultiProgress::new();
         let results: Vec<Vec<LweCiphertext<Vec<u64>>>> = (0..M)
             .into_par_iter()
             .map(|i| {
@@ -432,6 +514,7 @@ pub fn example_xt_training_probolut_vs_clear() {
                     i,
                     public_key,
                     &ctx,
+                    &mp,
                 )
             })
             .collect();

@@ -39,6 +39,7 @@ const GENERATE_TREE: bool = true;
 #[allow(dead_code)]
 const EXPORT_FOREST: bool = true;
 const NUM_THREADS: usize = 10;
+const VERBOSE: bool = true;
 
 fn main() {
     ThreadPoolBuilder::new()
