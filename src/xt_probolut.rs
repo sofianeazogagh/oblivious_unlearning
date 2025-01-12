@@ -376,185 +376,217 @@ pub fn example_xt_training_probolut() {
 /// Log the accuracy and time taken for training and testing.
 pub fn example_xt_training_probolut_vs_clear() {
     const TREE_DEPTH: u64 = 4;
+    const DATASET: &str = "iris";
     const N_CLASSES: u64 = 3;
-    const DATASET_NAME: &str = "iris_2bits";
-    const M: u64 = 10;
     const NUM_EXPERIMENTS: u64 = 10;
 
-    let mut ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
-    let private_key = key(ctx.parameters());
-    let public_key = &private_key.public_key;
+    let precisions = vec![2, 3, 4, 5];
+    let num_forests = vec![10, 40, 60];
+    let quantizations = vec!["", "non_uni", "fd"];
 
-    for _ in 0..NUM_EXPERIMENTS {
-        let start = Instant::now();
-        let clear_dataset = ClearDataset::from_file("data/".to_string() + DATASET_NAME + ".csv");
-        let (train_dataset, test_dataset) = clear_dataset.split(0.8);
+    for q in quantizations {
+        for b in &precisions {
+            for m in &num_forests {
+                let dataset_name = format!("{}_{}_{}bits", DATASET, q, b);
+                let M = *m;
 
-        if VERBOSE {
-            println!("\n --------- Training the clear forest ---------");
-        }
-        let mp = MultiProgress::new();
-        let mut clear_forest_trained = (0..M)
-            .into_par_iter()
-            .map(|i| {
-                let mut clear_tree = ClearTree::generate_clear_random_tree(
-                    TREE_DEPTH,
-                    clear_dataset.n_classes,
-                    clear_dataset.features_domain,
-                    clear_dataset.f,
-                );
+                let mut ctx = if *b <= 4 {
+                    Context::from(PARAM_MESSAGE_4_CARRY_0)
+                } else {
+                    Context::from(PARAM_MESSAGE_5_CARRY_0)
+                };
+                let private_key = key(ctx.parameters());
+                let public_key = &private_key.public_key;
 
-                // clear_tree.print();
-                let pb = make_pb(&mp, train_dataset.records.len() as u64, i.to_string());
+                for _ in 0..NUM_EXPERIMENTS {
+                    let start = Instant::now();
+                    let clear_dataset =
+                        ClearDataset::from_file("data/".to_string() + &dataset_name + ".csv");
+                    let (train_dataset, test_dataset) = clear_dataset.split(0.8);
 
-                train_dataset.records.iter().for_each(|sample| {
-                    clear_tree.update_statistic(sample);
-                    inc_progress!(&pb);
-                });
+                    if VERBOSE {
+                        println!("\n --------- Training the clear forest ---------");
+                    }
+                    let mp = MultiProgress::new();
+                    let mut clear_forest_trained = (0..M)
+                        .into_par_iter()
+                        .map(|i| {
+                            let mut clear_tree = ClearTree::generate_clear_random_tree(
+                                TREE_DEPTH,
+                                clear_dataset.n_classes,
+                                clear_dataset.features_domain,
+                                clear_dataset.f,
+                            );
 
-                finish_progress!(pb);
-                clear_tree
-            })
-            .collect::<Vec<_>>();
+                            // clear_tree.print();
+                            let pb =
+                                make_pb(&mp, train_dataset.records.len() as u64, i.to_string());
 
-        let training_time = Instant::now() - start;
-        let start = Instant::now();
+                            train_dataset.records.iter().for_each(|sample| {
+                                clear_tree.update_statistic(sample);
+                                inc_progress!(&pb);
+                            });
 
-        if VERBOSE {
-            println!("\n --------- Testing the clear forest ---------");
-        }
-        let mp = MultiProgress::new();
-        let pb = make_pb(&mp, test_dataset.records.len() as u64, "_");
+                            finish_progress!(pb);
+                            clear_tree
+                        })
+                        .collect::<Vec<_>>();
 
-        let mut correct = 0;
-        let mut total = 0;
-        test_dataset.records.iter().for_each(|sample| {
-            let mut votes = vec![0; N_CLASSES as usize];
-            clear_forest_trained.iter_mut().for_each(|tree| {
-                let leaf = tree.infer(sample);
-                for c in 0..N_CLASSES {
-                    votes[c as usize] += leaf.counts[c as usize];
+                    let training_time = Instant::now() - start;
+                    let start = Instant::now();
+
+                    if VERBOSE {
+                        println!("\n --------- Testing the clear forest ---------");
+                    }
+                    let mp = MultiProgress::new();
+                    let pb = make_pb(&mp, test_dataset.records.len() as u64, "_");
+
+                    let mut correct = 0;
+                    let mut total = 0;
+                    test_dataset.records.iter().for_each(|sample| {
+                        let mut votes = vec![0; N_CLASSES as usize];
+                        clear_forest_trained.iter_mut().for_each(|tree| {
+                            let leaf = tree.infer(sample);
+                            for c in 0..N_CLASSES {
+                                votes[c as usize] += leaf.counts[c as usize];
+                            }
+                        });
+
+                        let (predicted_label, _) =
+                            votes.iter().enumerate().max_by_key(|x| x.1).unwrap();
+                        let true_label = sample.class;
+                        if predicted_label == true_label as usize {
+                            correct += 1;
+                        }
+                        total += 1;
+                        inc_progress!(&pb);
+                    });
+
+                    let testing_time = Instant::now() - start;
+                    finish_progress!(pb);
+
+                    println!("\n-------- Clear Forest Accuracy -------- ");
+                    println!("Correct: {}, Total: {}", correct, total);
+                    let accuracy = correct as f64 / total as f64;
+                    println!("\n Accuracy: {} ", accuracy);
+
+                    log(
+                        &format!("logs/{}_{}d_{}m_clear.csv", dataset_name, TREE_DEPTH, M),
+                        &format!(
+                            "{},{},{}",
+                            accuracy,
+                            training_time.as_millis(),
+                            testing_time.as_millis()
+                        ),
+                    );
+
+                    if VERBOSE {
+                        println!("\n --------- Training the forest on private data ---------");
+                    }
+
+                    let enc_train_dataset = EncryptedDatasetLut::from_clear_dataset(
+                        &train_dataset,
+                        &private_key,
+                        &mut ctx,
+                    );
+                    let enc_test_dataset = EncryptedDatasetLut::from_clear_dataset(
+                        &test_dataset,
+                        &private_key,
+                        &mut ctx,
+                    );
+                    // Train forest
+
+                    let start = Instant::now();
+                    let mp = MultiProgress::new();
+                    let forest: Vec<(TreeLUT, Vec<Vec<LUT>>)> = (0..M)
+                        .into_par_iter()
+                        .map(|i| {
+                            let treelut =
+                                TreeLUT::from_clear_tree(&clear_forest_trained[i as usize], &ctx);
+                            // treelut.print_tree(private_key, &ctx);
+                            let luts_samples = train_single_tree(
+                                &enc_train_dataset,
+                                &treelut,
+                                i,
+                                public_key,
+                                &ctx,
+                                &mp,
+                            );
+
+                            (treelut, luts_samples)
+                        })
+                        .collect();
+
+                    let training_time = Instant::now() - start;
+
+                    // Aggregate counts
+                    let summed_counts: Vec<Vec<Vec<u64>>> = forest
+                        .iter()
+                        .map(|(_, luts_samples)| {
+                            aggregate_tree_counts(luts_samples, TREE_DEPTH, &private_key, &ctx)
+                        })
+                        .collect();
+
+                    if VERBOSE {
+                        println!("\n --------- Testing the forest on private data ---------");
+                    }
+                    // Test forest
+                    let start = Instant::now();
+
+                    let mp = MultiProgress::new();
+                    let results: Vec<Vec<LweCiphertext<Vec<u64>>>> = (0..M)
+                        .into_par_iter()
+                        .map(|i| {
+                            test_single_tree(
+                                &forest[i as usize].0,
+                                &enc_test_dataset,
+                                i,
+                                public_key,
+                                &ctx,
+                                &mp,
+                            )
+                        })
+                        .collect();
+
+                    let selected_leaves = results
+                        .iter()
+                        .map(|tree_results| {
+                            tree_results
+                                .iter()
+                                .map(|result| private_key.decrypt_lwe(result, &ctx))
+                                .collect::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>();
+
+                    let (correct, total) = evaluate_forest(
+                        &selected_leaves,
+                        &summed_counts,
+                        &enc_test_dataset,
+                        M,
+                        N_CLASSES,
+                        &private_key,
+                        &ctx,
+                    );
+
+                    let testing_time = Instant::now() - start;
+
+                    println!("\n-------- Accuracy -------- ");
+                    println!("Correct: {}, Total: {}", correct, total);
+                    let accuracy = correct as f64 / total as f64;
+                    println!("\n Accuracy: {} ", accuracy);
+
+                    log(
+                        &format!("logs/{}_{}d_{}m_probolut.csv", dataset_name, TREE_DEPTH, M),
+                        &format!(
+                            "{},{},{}",
+                            accuracy,
+                            training_time.as_millis(),
+                            testing_time.as_millis()
+                        ),
+                    );
                 }
-            });
-
-            let (predicted_label, _) = votes.iter().enumerate().max_by_key(|x| x.1).unwrap();
-            let true_label = sample.class;
-            if predicted_label == true_label as usize {
-                correct += 1;
             }
-            total += 1;
-            inc_progress!(&pb);
-        });
-
-        let testing_time = Instant::now() - start;
-        finish_progress!(pb);
-
-        println!("\n-------- Clear Forest Accuracy -------- ");
-        println!("Correct: {}, Total: {}", correct, total);
-        let accuracy = correct as f64 / total as f64;
-        println!("\n Accuracy: {} ", accuracy);
-
-        log(
-            &format!("logs/{}_{}_{}_clear.csv", DATASET_NAME, TREE_DEPTH, M),
-            &format!(
-                "{},{},{}",
-                accuracy,
-                training_time.as_millis(),
-                testing_time.as_millis()
-            ),
-        );
-
-        if VERBOSE {
-            println!("\n --------- Training the forest on private data ---------");
         }
-
-        let enc_train_dataset =
-            EncryptedDatasetLut::from_clear_dataset(&train_dataset, &private_key, &mut ctx);
-        let enc_test_dataset =
-            EncryptedDatasetLut::from_clear_dataset(&test_dataset, &private_key, &mut ctx);
-        // Train forest
-
-        let start = Instant::now();
-        let mp = MultiProgress::new();
-        let forest: Vec<(TreeLUT, Vec<Vec<LUT>>)> = (0..M)
-            .into_par_iter()
-            .map(|i| {
-                let treelut = TreeLUT::from_clear_tree(&clear_forest_trained[i as usize], &ctx);
-                // treelut.print_tree(private_key, &ctx);
-                let luts_samples =
-                    train_single_tree(&enc_train_dataset, &treelut, i, public_key, &ctx, &mp);
-
-                (treelut, luts_samples)
-            })
-            .collect();
-
-        let training_time = Instant::now() - start;
-
-        // Aggregate counts
-        let summed_counts: Vec<Vec<Vec<u64>>> = forest
-            .iter()
-            .map(|(_, luts_samples)| {
-                aggregate_tree_counts(luts_samples, TREE_DEPTH, &private_key, &ctx)
-            })
-            .collect();
-
-        if VERBOSE {
-            println!("\n --------- Testing the forest on private data ---------");
-        }
-        // Test forest
-        let start = Instant::now();
-
-        let mp = MultiProgress::new();
-        let results: Vec<Vec<LweCiphertext<Vec<u64>>>> = (0..M)
-            .into_par_iter()
-            .map(|i| {
-                test_single_tree(
-                    &forest[i as usize].0,
-                    &enc_test_dataset,
-                    i,
-                    public_key,
-                    &ctx,
-                    &mp,
-                )
-            })
-            .collect();
-
-        let selected_leaves = results
-            .iter()
-            .map(|tree_results| {
-                tree_results
-                    .iter()
-                    .map(|result| private_key.decrypt_lwe(result, &ctx))
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-
-        let (correct, total) = evaluate_forest(
-            &selected_leaves,
-            &summed_counts,
-            &enc_test_dataset,
-            M,
-            N_CLASSES,
-            &private_key,
-            &ctx,
-        );
-
-        let testing_time = Instant::now() - start;
-
-        println!("\n-------- Accuracy -------- ");
-        println!("Correct: {}, Total: {}", correct, total);
-        let accuracy = correct as f64 / total as f64;
-        println!("\n Accuracy: {} ", accuracy);
-
-        log(
-            &format!("logs/{}_{}_{}_probolut.csv", DATASET_NAME, TREE_DEPTH, M),
-            &format!(
-                "{},{},{}",
-                accuracy,
-                training_time.as_millis(),
-                testing_time.as_millis()
-            ),
-        );
     }
 }
 
