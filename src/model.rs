@@ -344,7 +344,7 @@ impl TreeLUT {
             let mut feature_indices = Vec::new();
 
             for internal_node in tree.nodes[level as usize].iter() {
-                thresholds.push(internal_node.threshold);
+                thresholds.push(internal_node.threshold as u64);
                 feature_indices.push(internal_node.feature_index);
             }
 
@@ -360,7 +360,7 @@ impl TreeLUT {
 
         Self {
             root: Root {
-                threshold: tree.root.threshold,
+                threshold: tree.root.threshold as u64,
                 feature_index: tree.root.feature_index,
             },
             stages,

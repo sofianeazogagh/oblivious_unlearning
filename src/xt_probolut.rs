@@ -383,7 +383,7 @@ pub fn example_xt_training_probolut_vs_clear(args: Args) {
 
     // let precisions = vec![2, 3, 4, 5];
     // let num_forests = vec![10, 40, 60];
-    // let quantizations = vec!["", "non_uni", "fd"];
+    // let quantizations = vec!["uni", "non_uni", "fd"];
 
     let precisions = args.precisions;
     let num_forests = args.num_forests;

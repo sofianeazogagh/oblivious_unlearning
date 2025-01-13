@@ -55,9 +55,7 @@ fn main() {
 
     let args = Args::parse();
 
-    println!("{:?}", args);
+    xt_probolut::example_xt_training_probolut_vs_clear(args);
 
-    // xt_probolut::example_xt_training_probolut_vs_clear(args);
-
-    clear_training::benchmar_clear_training(args);
+    // clear_training::benchmark_clear_training(args);
 }

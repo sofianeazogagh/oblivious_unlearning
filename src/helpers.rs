@@ -23,9 +23,6 @@ pub struct Args {
 
     #[arg(long, value_delimiter = ',')]
     pub depths: Vec<u64>,
-
-    #[arg(long, value_delimiter = ',')]
-    pub experiments: Vec<String>,
 }
 
 use crate::VERBOSE;

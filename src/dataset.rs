@@ -3,7 +3,7 @@ use std::vec;
 
 //  import Query from probonite.rs
 use crate::probonite::Query;
-use rand::seq::SliceRandom;
+use rand::seq::{index::sample, SliceRandom};
 
 use crate::clear_model::ClearDataset;
 use revolut::{Context, PrivateKey, LUT};
@@ -233,8 +233,9 @@ impl EncryptedDatasetLut {
             .records
             .iter()
             .map(|sample| {
+                let features = sample.features.iter().map(|x| *x as u64).collect();
                 EncryptedSample::make_encrypted_sample(
-                    &sample.features,
+                    &features,
                     &sample.class,
                     dataset.n_classes,
                     private_key,
@@ -242,11 +243,16 @@ impl EncryptedDatasetLut {
                 )
             })
             .collect();
+
+        let features_domain = (
+            dataset.features_domain.0 as u64,
+            dataset.features_domain.1 as u64,
+        );
         Self {
             records,
             f: dataset.f,
             n_classes: dataset.n_classes,
-            features_domain: dataset.features_domain,
+            features_domain: features_domain,
         }
     }
 

@@ -25,7 +25,7 @@ use crate::{create_progress_bar, finish_progress, inc_progress, make_pb};
 // CONSTANTS
 use crate::VERBOSE;
 
-pub fn benchmar_clear_training(args: Args) {
+pub fn benchmark_clear_training(args: Args) {
     // const TREE_DEPTH: u64 = 4;
     // const DATASET: &str = "iris";
     const N_CLASSES: u64 = 3;
@@ -47,7 +47,15 @@ pub fn benchmar_clear_training(args: Args) {
             for m in &num_forests {
                 for d in depths.clone() {
                     let TREE_DEPTH = d;
-                    let dataset_name = format!("{}_{}_{}bits", DATASET, q, b);
+
+                    let mut dataset_name: String;
+
+                    if q == "original" {
+                        dataset_name = DATASET.clone();
+                    } else {
+                        dataset_name = format!("{}_{}_{}bits", DATASET, q, b);
+                    }
+
                     let M = *m;
 
                     let mut ctx = if *b <= 4 {
@@ -60,6 +68,7 @@ pub fn benchmar_clear_training(args: Args) {
 
                     for _ in 0..NUM_EXPERIMENTS {
                         let start = Instant::now();
+                        println!("{}", dataset_name);
                         let clear_dataset =
                             ClearDataset::from_file("data/".to_string() + &dataset_name + ".csv");
                         let (train_dataset, test_dataset) = clear_dataset.split(0.8);
