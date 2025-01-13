@@ -26,6 +26,10 @@ use xt_probonite::*;
 mod helpers;
 use helpers::*;
 
+mod clear_training;
+use clear_training::*;
+
+use clap::Parser;
 use rayon::{
     iter::{IntoParallelIterator, ParallelIterator},
     ThreadPoolBuilder,
@@ -33,6 +37,8 @@ use rayon::{
 use revolut::*;
 
 use tfhe::shortint::parameters::*;
+
+use std::env;
 
 #[allow(dead_code)]
 const GENERATE_TREE: bool = true;
@@ -47,5 +53,11 @@ fn main() {
         .build_global()
         .unwrap();
 
-    xt_probolut::example_xt_training_probolut_vs_clear();
+    let args = Args::parse();
+
+    println!("{:?}", args);
+
+    // xt_probolut::example_xt_training_probolut_vs_clear(args);
+
+    clear_training::benchmar_clear_training(args);
 }
