@@ -1,0 +1,1 @@
+cargo run --release -- --dataset-name=iris --number-of-experiments=100 --precisions=2,3,4,5 --num-forests=10,40,60 --quantizations=uni,non_uni,fd --depths=2,3,4
