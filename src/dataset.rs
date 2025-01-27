@@ -133,7 +133,7 @@ pub struct EncryptedDatasetLut {
     pub records: Vec<EncryptedSample>,
     pub f: u64,
     pub n_classes: u64,
-    pub features_domain: (u64, u64),
+    pub max_features: u64,
 }
 
 impl EncryptedDatasetLut {
@@ -146,7 +146,7 @@ impl EncryptedDatasetLut {
         let mut rdr = csv::Reader::from_path(filepath).unwrap();
         let mut records = Vec::new();
         let mut f = 0;
-        let mut features_domain = (std::u64::MIN, std::u64::MAX);
+        let mut max_features = std::u64::MIN;
 
         for result in rdr.records() {
             let record = result.unwrap();
@@ -159,11 +159,8 @@ impl EncryptedDatasetLut {
                 } else {
                     record_vec.push(value);
 
-                    if value < features_domain.0 {
-                        features_domain.0 = value;
-                    }
-                    if value > features_domain.1 {
-                        features_domain.1 = value;
+                    if value > max_features {
+                        max_features = value;
                     }
                 }
             }
@@ -185,7 +182,7 @@ impl EncryptedDatasetLut {
             records,
             f,
             n_classes,
-            features_domain,
+            max_features,
         }
     }
 
@@ -213,13 +210,13 @@ impl EncryptedDatasetLut {
                 records: train_records,
                 f: self.f,
                 n_classes: self.n_classes,
-                features_domain: self.features_domain,
+                max_features: self.max_features,
             },
             EncryptedDatasetLut {
                 records: test_records,
                 f: self.f,
                 n_classes: self.n_classes,
-                features_domain: self.features_domain,
+                max_features: self.max_features,
             },
         )
     }
@@ -244,15 +241,11 @@ impl EncryptedDatasetLut {
             })
             .collect();
 
-        let features_domain = (
-            dataset.features_domain.0 as u64,
-            dataset.features_domain.1 as u64,
-        );
         Self {
             records,
             f: dataset.f,
             n_classes: dataset.n_classes,
-            features_domain: features_domain,
+            max_features: dataset.max_features,
         }
     }
 

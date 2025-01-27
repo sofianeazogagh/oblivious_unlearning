@@ -3,7 +3,7 @@ use rand::{distributions::uniform::SampleBorrow, Rng, RngCore};
 
 #[derive(Clone)]
 pub struct Root {
-    pub threshold: f64,
+    pub threshold: u64,
     pub feature_index: u64,
 }
 
@@ -16,7 +16,7 @@ impl Root {
 #[derive(Clone)]
 pub struct InternalNode {
     pub id: u64,
-    pub threshold: f64,
+    pub threshold: u64,
     pub feature_index: u64,
 }
 
@@ -51,7 +51,7 @@ impl ClearTree {
     pub fn new() -> Self {
         Self {
             root: Root {
-                threshold: 0.0,
+                threshold: 0,
                 feature_index: 0,
             },
             nodes: Vec::new(),
@@ -64,7 +64,7 @@ impl ClearTree {
     pub fn infer(&mut self, record: &ClearSample) -> &mut Leaf {
         let mut current_node = &InternalNode {
             id: 0,
-            threshold: 0.0,
+            threshold: 0,
             feature_index: 0,
         };
 
@@ -116,7 +116,7 @@ impl ClearTree {
     pub fn generate_clear_random_tree(
         depth: u64,
         n_classes: u64,
-        features_domain: (f64, f64),
+        max_features: u64,
         f: u64,
     ) -> ClearTree {
         let mut tree = ClearTree::new();
@@ -126,25 +126,23 @@ impl ClearTree {
         let mut rng = rand::thread_rng();
 
         // the feature index should be selected among the possible feature indices
-        tree.root.feature_index = rng.gen_range(0..f);
+        // tree.root.feature_index = rng.gen_range(0..f);
+        tree.root.feature_index = rand::random::<u64>() % f as u64;
+        // tree.root.threshold = rng.gen_range(features_domain.0..=features_domain.1) as f64;
+        tree.root.threshold = rand::random::<u64>() % max_features as u64;
 
-        tree.root.threshold = rng.gen_range(features_domain.0..=features_domain.1) as f64;
-        //  generate a float between the min and max of the feature domain
+        tree.root.print();
 
         for idx in 1..depth {
             let mut level = Vec::new();
             for j in 0..(2u64.pow(idx as u32) as usize) {
                 let feature_index = rng.gen_range(0..f);
                 let mut threshold = 0.0;
-                if features_domain.0 == features_domain.1 {
-                    threshold = features_domain.0;
-                } else {
-                    threshold = rng.gen_range(features_domain.0..=features_domain.1);
-                }
+                let threshold = rand::random::<u64>() % max_features as u64;
 
                 let node = InternalNode {
                     id: j as u64,
-                    threshold: threshold,
+                    threshold,
                     feature_index,
                 };
                 level.push(node);
@@ -164,7 +162,7 @@ impl ClearTree {
 
 #[derive(Clone)]
 pub struct ClearSample {
-    pub features: Vec<f64>,
+    pub features: Vec<u64>,
     pub class: u64,
 }
 
@@ -181,7 +179,7 @@ impl ClearSample {
 #[derive(Clone)]
 pub struct ClearDataset {
     pub records: Vec<ClearSample>,
-    pub features_domain: (f64, f64),
+    pub max_features: u64,
     pub n_classes: u64,
     pub f: u64,
     pub n: u64,
@@ -193,8 +191,7 @@ impl ClearDataset {
         let mut records = Vec::new();
         let mut n = 0;
 
-        let mut min = std::f64::MAX;
-        let mut max = std::f64::MIN;
+        let mut max = std::u64::MIN;
         let mut classes = Vec::new();
 
         for result in rdr.records() {
@@ -203,7 +200,7 @@ impl ClearDataset {
             let mut class: u64 = 0;
 
             for (i, field) in record.iter().enumerate() {
-                let value = field.parse::<f64>().unwrap();
+                let value = field.parse::<u64>().unwrap();
 
                 if i == record.len() - 1 {
                     class = value as u64;
@@ -214,9 +211,6 @@ impl ClearDataset {
                     record_vec.push(value);
                 }
 
-                if value < min {
-                    min = value;
-                }
                 if value > max {
                     max = value;
                 }
@@ -228,11 +222,10 @@ impl ClearDataset {
         }
 
         let f = records[0].features.len() as u64;
-        let features_domain = (min, max);
 
         Self {
             records,
-            features_domain,
+            max_features: max,
             n_classes: classes.len() as u64,
             f,
             n,
@@ -270,7 +263,7 @@ impl ClearDataset {
 
         let train_dataset = ClearDataset {
             records: train_records,
-            features_domain: self.features_domain,
+            max_features: self.max_features,
             n_classes: self.n_classes,
             f: self.f,
             n: n_train,
@@ -278,7 +271,7 @@ impl ClearDataset {
 
         let test_dataset = ClearDataset {
             records: test_records,
-            features_domain: self.features_domain,
+            max_features: self.max_features,
             n_classes: self.n_classes,
             f: self.f,
             n: n as u64 - n_train,

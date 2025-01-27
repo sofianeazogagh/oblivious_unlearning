@@ -83,7 +83,7 @@ pub fn benchmark_clear_training(args: Args) {
                                 let mut clear_tree = ClearTree::generate_clear_random_tree(
                                     TREE_DEPTH,
                                     clear_dataset.n_classes,
-                                    clear_dataset.features_domain,
+                                    clear_dataset.max_features,
                                     clear_dataset.f,
                                 );
 

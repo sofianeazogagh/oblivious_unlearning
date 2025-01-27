@@ -9,6 +9,10 @@ use crate::ClearTree;
 use revolut::{key, Context, PrivateKey, PublicKey, LUT};
 type LWE = LweCiphertext<Vec<u64>>;
 
+use tfhe::boolean::prelude::Ciphertext;
+use tfhe::integer::ciphertext::BaseRadixCiphertext;
+use tfhe::integer::RadixCiphertext;
+use tfhe::shortint::backward_compatibility::public_key;
 // TFHE
 use tfhe::{core_crypto::prelude::LweCiphertext, shortint::parameters::*};
 
@@ -196,6 +200,42 @@ fn aggregate_tree_counts(
                     luts_samples[l as usize][j as usize].to_array(private_key, ctx)[k as usize];
             }
             class_count.push(count);
+        }
+        tree_counts.push(class_count);
+    }
+    tree_counts
+}
+
+fn aggregate_tree_counts_radix(
+    luts_samples: &Vec<Vec<LUT>>,
+    tree_depth: u64,
+    public_key: &revolut::PublicKey,
+    ctx: &revolut::Context,
+) -> Vec<Vec<RadixCiphertext>> {
+    let n_samples = luts_samples.len() as u64;
+    let n_classes = luts_samples[0].len() as u64;
+    let mut output = Vec::new();
+    for i in 0..n_samples {
+        let mut sample_results = Vec::new();
+        for j in 0..n_classes {
+            let mut class_results =
+                luts_samples[i as usize][j as usize].to_many_lwe(public_key, ctx);
+            sample_results.push(class_results);
+        }
+        output.push(sample_results);
+    }
+
+    let mut tree_counts = Vec::new();
+    for j in 0..n_classes {
+        let mut class_count = Vec::new();
+        for k in 0..2u32.pow(tree_depth as u32) {
+            let mut counts_to_sum = Vec::new();
+            for l in 0..n_samples {
+                counts_to_sum.push(output[l as usize][j as usize][k as usize].clone());
+            }
+
+            let sum = public_key.lwe_add_into_radix_ciphertext(counts_to_sum, 1, ctx);
+            class_count.push(sum);
         }
         tree_counts.push(class_count);
     }
@@ -431,11 +471,12 @@ pub fn example_xt_training_probolut_vs_clear(args: Args) {
                                 let mut clear_tree = ClearTree::generate_clear_random_tree(
                                     TREE_DEPTH,
                                     clear_dataset.n_classes,
-                                    clear_dataset.features_domain,
+                                    clear_dataset.max_features,
                                     clear_dataset.f,
                                 );
 
                                 // clear_tree.print();
+
                                 let pb =
                                     make_pb(&mp, train_dataset.records.len() as u64, i.to_string());
 
@@ -482,7 +523,7 @@ pub fn example_xt_training_probolut_vs_clear(args: Args) {
                         let testing_time = Instant::now() - start;
                         finish_progress!(pb);
 
-                        println!("\n-------- Clear Forest Accuracy -------- ");
+                        println!("\n-------- Forest on clear data - Accuracy -------- ");
                         println!("Correct: {}, Total: {}", correct, total);
                         let accuracy = correct as f64 / total as f64;
                         println!("\n Accuracy: {} ", accuracy);
@@ -522,7 +563,9 @@ pub fn example_xt_training_probolut_vs_clear(args: Args) {
                                     &clear_forest_trained[i as usize],
                                     &ctx,
                                 );
-                                // treelut.print_tree(private_key, &ctx);
+
+                                treelut.print_tree(private_key, &ctx);
+
                                 let luts_samples = train_single_tree(
                                     &enc_train_dataset,
                                     &treelut,
@@ -531,19 +574,22 @@ pub fn example_xt_training_probolut_vs_clear(args: Args) {
                                     &ctx,
                                     &mp,
                                 );
-                                
+
                                 (treelut, luts_samples)
                             })
                             .collect();
-                    log(
-                        &format!("logs_1st_campaign/{}_{}d_{}m_clear.csv", dataset_name, TREE_DEPTH, M),
-                        &format!(
-                            "{},{},{}",
-                            accuracy,
-                            training_time.as_millis(),
-                            testing_time.as_millis()
-                        ),
-                    );
+                        log(
+                            &format!(
+                                "logs_1st_campaign/{}_{}d_{}m_clear.csv",
+                                dataset_name, TREE_DEPTH, M
+                            ),
+                            &format!(
+                                "{},{},{}",
+                                accuracy,
+                                training_time.as_millis(),
+                                testing_time.as_millis()
+                            ),
+                        );
 
                         let training_time = Instant::now() - start;
 
@@ -554,6 +600,32 @@ pub fn example_xt_training_probolut_vs_clear(args: Args) {
                                 aggregate_tree_counts(luts_samples, TREE_DEPTH, &private_key, &ctx)
                             })
                             .collect();
+
+                        // let summed_counts_radix: Vec<Vec<Vec<RadixCiphertext>>> = forest
+                        //     .iter()
+                        //     .map(|(_, luts_samples)| {
+                        //         aggregate_tree_counts_radix(
+                        //             luts_samples,
+                        //             TREE_DEPTH,
+                        //             public_key,
+                        //             &ctx,
+                        //         )
+                        //     })
+                        //     .collect();
+
+                        // println!("Clear version : {:?}", summed_counts);
+                        // for i in 0..summed_counts_radix.len() {
+                        //     for j in 0..summed_counts_radix[i].len() {
+                        //         for k in 0..summed_counts_radix[i][j].len() {
+                        //             println!(
+                        //                 "{:?}",
+                        //                 private_key.decrypt_radix_ciphertext(
+                        //                     &summed_counts_radix[i][j][k]
+                        //                 )
+                        //             );
+                        //         }
+                        //     }
+                        // }
 
                         if VERBOSE {
                             println!("\n --------- Testing the forest on private data ---------");
@@ -598,13 +670,16 @@ pub fn example_xt_training_probolut_vs_clear(args: Args) {
 
                         let testing_time = Instant::now() - start;
 
-                        println!("\n-------- Accuracy -------- ");
+                        println!("\n-------- Forest on encrypted data - Accuracy -------- ");
                         println!("Correct: {}, Total: {}", correct, total);
                         let accuracy = correct as f64 / total as f64;
                         println!("\n Accuracy: {} ", accuracy);
 
                         log(
-                            &format!("logs/{}_{}d_{}m_probolut.csv", dataset_name, TREE_DEPTH, M),
+                            &format!(
+                                "logs_1st_campaign/{}_{}d_{}m_probolut.csv",
+                                dataset_name, TREE_DEPTH, M
+                            ),
                             &format!(
                                 "{},{},{}",
                                 accuracy,
@@ -613,107 +688,6 @@ pub fn example_xt_training_probolut_vs_clear(args: Args) {
                             ),
                         );
                     }
-
-                    let enc_train_dataset = EncryptedDatasetLut::from_clear_dataset(
-                        &train_dataset,
-                        &private_key,
-                        &mut ctx,
-                    );
-                    let enc_test_dataset = EncryptedDatasetLut::from_clear_dataset(
-                        &test_dataset,
-                        &private_key,
-                        &mut ctx,
-                    );
-                    // Train forest
-
-                    let start = Instant::now();
-                    let mp = MultiProgress::new();
-                    let forest: Vec<(TreeLUT, Vec<Vec<LUT>>)> = (0..M)
-                        .into_par_iter()
-                        .map(|i| {
-                            let treelut =
-                                TreeLUT::from_clear_tree(&clear_forest_trained[i as usize], &ctx);
-                            // treelut.print_tree(private_key, &ctx);
-                            let luts_samples = train_single_tree(
-                                &enc_train_dataset,
-                                &treelut,
-                                i,
-                                public_key,
-                                &ctx,
-                                &mp,
-                            );
-
-                            (treelut, luts_samples)
-                        })
-                        .collect();
-
-                    let training_time = Instant::now() - start;
-
-                    // Aggregate counts
-                    let summed_counts: Vec<Vec<Vec<u64>>> = forest
-                        .iter()
-                        .map(|(_, luts_samples)| {
-                            aggregate_tree_counts(luts_samples, TREE_DEPTH, &private_key, &ctx)
-                        })
-                        .collect();
-
-                    if VERBOSE {
-                        println!("\n --------- Testing the forest on private data ---------");
-                    }
-                    // Test forest
-                    let start = Instant::now();
-
-                    let mp = MultiProgress::new();
-                    let results: Vec<Vec<LweCiphertext<Vec<u64>>>> = (0..M)
-                        .into_par_iter()
-                        .map(|i| {
-                            test_single_tree(
-                                &forest[i as usize].0,
-                                &enc_test_dataset,
-                                i,
-                                public_key,
-                                &ctx,
-                                &mp,
-                            )
-                        })
-                        .collect();
-
-                    let selected_leaves = results
-                        .iter()
-                        .map(|tree_results| {
-                            tree_results
-                                .iter()
-                                .map(|result| private_key.decrypt_lwe(result, &ctx))
-                                .collect::<Vec<_>>()
-                        })
-                        .collect::<Vec<_>>();
-
-                    let (correct, total) = evaluate_forest(
-                        &selected_leaves,
-                        &summed_counts,
-                        &enc_test_dataset,
-                        M,
-                        N_CLASSES,
-                        &private_key,
-                        &ctx,
-                    );
-
-                    let testing_time = Instant::now() - start;
-
-                    println!("\n-------- Accuracy -------- ");
-                    println!("Correct: {}, Total: {}", correct, total);
-                    let accuracy = correct as f64 / total as f64;
-                    println!("\n Accuracy: {} ", accuracy);
-
-                    log(
-                        &format!("logs_1st_campaign/{}_{}d_{}m_probolut.csv", dataset_name, TREE_DEPTH, M),
-                        &format!(
-                            "{},{},{}",
-                            accuracy,
-                            training_time.as_millis(),
-                            testing_time.as_millis()
-                        ),
-                    );
                 }
             }
         }
