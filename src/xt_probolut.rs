@@ -212,6 +212,7 @@ fn aggregate_tree_counts_radix(
     public_key: &revolut::PublicKey,
     ctx: &revolut::Context,
 ) -> Vec<Vec<RadixCiphertext>> {
+    let mut start = Instant::now();
     let n_samples = luts_samples.len() as u64;
     let n_classes = luts_samples[0].len() as u64;
     let mut output = Vec::new();
@@ -224,6 +225,14 @@ fn aggregate_tree_counts_radix(
         }
         output.push(sample_results);
     }
+
+    let mut end = Instant::now();
+    println!(
+        "Time taken to convert to LWE: {:?}",
+        end.duration_since(start)
+    );
+
+    start = Instant::now();
 
     let mut tree_counts = Vec::new();
     for j in 0..n_classes {
@@ -239,6 +248,9 @@ fn aggregate_tree_counts_radix(
         }
         tree_counts.push(class_count);
     }
+
+    end = Instant::now();
+    println!("Time taken to sum: {:?}", end.duration_since(start));
     tree_counts
 }
 
@@ -601,31 +613,34 @@ pub fn example_xt_training_probolut_vs_clear(args: Args) {
                             })
                             .collect();
 
-                        // let summed_counts_radix: Vec<Vec<Vec<RadixCiphertext>>> = forest
-                        //     .iter()
-                        //     .map(|(_, luts_samples)| {
-                        //         aggregate_tree_counts_radix(
-                        //             luts_samples,
-                        //             TREE_DEPTH,
-                        //             public_key,
-                        //             &ctx,
-                        //         )
-                        //     })
-                        //     .collect();
+                        let summed_counts_radix: Vec<Vec<Vec<RadixCiphertext>>> = forest
+                            .iter()
+                            .map(|(_, luts_samples)| {
+                                aggregate_tree_counts_radix(
+                                    luts_samples,
+                                    TREE_DEPTH,
+                                    public_key,
+                                    &ctx,
+                                )
+                            })
+                            .collect();
 
-                        // println!("Clear version : {:?}", summed_counts);
-                        // for i in 0..summed_counts_radix.len() {
-                        //     for j in 0..summed_counts_radix[i].len() {
-                        //         for k in 0..summed_counts_radix[i][j].len() {
-                        //             println!(
-                        //                 "{:?}",
-                        //                 private_key.decrypt_radix_ciphertext(
-                        //                     &summed_counts_radix[i][j][k]
-                        //                 )
-                        //             );
-                        //         }
-                        //     }
-                        // }
+                        println!("Clear version : {:?}", summed_counts);
+                        let mut final_counts = Vec::new();
+                        for i in 0..summed_counts_radix.len() {
+                            let mut class_counts = Vec::new();
+                            for j in 0..summed_counts_radix[i].len() {
+                                let mut leaf_counts = Vec::new();
+                                for k in 0..summed_counts_radix[i][j].len() {
+                                    let dec = private_key
+                                        .decrypt_radix_ciphertext(&summed_counts_radix[i][j][k]);
+                                    leaf_counts.push(dec);
+                                }
+                                class_counts.push(leaf_counts);
+                            }
+                            final_counts.push(class_counts);
+                        }
+                        println!("Encrypted version : {:?}", final_counts);
 
                         if VERBOSE {
                             println!("\n --------- Testing the forest on private data ---------");

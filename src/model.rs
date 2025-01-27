@@ -1,7 +1,16 @@
 // REVOLUT
-use revolut::*;
-
+use crate::helpers::*;
 use crate::ClearTree;
+use crate::Context;
+use crate::EncryptedDatasetLut;
+use crate::EncryptedSample;
+use crate::PrivateKey;
+use crate::LUT;
+use crate::{create_progress_bar, finish_progress, inc_progress, make_pb};
+use rayon::iter::IntoParallelRefIterator;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use revolut::*;
+use tfhe::integer::RadixCiphertext;
 
 #[derive(Clone)]
 pub struct Root {
@@ -437,3 +446,198 @@ impl TreeLUT {
         }
     }
 }
+
+// pub struct XTForestLUT {
+//     pub trees: Vec<TreeLUT>,
+//     pub final_counts: Vec<Vec<Vec<RadixCiphertext>>>,
+//     pub n_classes: u64,
+//     pub depth: u64,
+//     pub public_key: PublicKey,
+//     pub ctx: Context,
+// }
+
+// impl XTForestLUT {
+//     pub fn from_clear_forest(forest: &Vec<ClearTree>, public_key: PublicKey, ctx: Context) -> Self {
+//         let mut trees = Vec::new();
+//         let n_classes = forest[0].n_classes;
+//         let depth = forest[0].depth;
+
+//         for tree in forest {
+//             trees.push(TreeLUT::from_clear_tree(tree, &ctx));
+//         }
+
+//         Self {
+//             trees,
+//             n_classes,
+//             depth,
+//             public_key,
+//             ctx,
+//         }
+//     }
+
+//     pub fn train_single_tree(
+//         &self,
+//         train_dataset: &EncryptedDatasetLut,
+//         tree: &TreeLUT,
+//         tree_idx: u64,
+//         mp: &MultiProgress,
+//     ) -> Vec<Vec<LUT>> {
+//         let tree_depth = tree.depth;
+//         let pb = make_pb(mp, train_dataset.records.len() as u64, tree_idx.to_string());
+
+//         let luts_samples = (0..train_dataset.records.len() as u64)
+//             .into_par_iter()
+//             .map(|j| {
+//                 let result = self.probolut_for_training(
+//                     &tree,
+//                     &train_dataset.records[j as usize],
+//                     &self.public_key,
+//                     &self.ctx,
+//                 );
+//                 inc_progress!(&pb);
+//                 result
+//             })
+//             .collect::<Vec<_>>();
+
+//         finish_progress!(pb);
+//         luts_samples
+//     }
+
+//     pub fn train(&self, train_dataset: &EncryptedDatasetLut) {
+//         let mp = MultiProgress::new();
+//         let trained_trees_and_counts: Vec<(&TreeLUT, Vec<Vec<LUT>>)> = (0..self.trees.len())
+//             .into_par_iter()
+//             .map(|i| {
+//                 let tree = &self.trees[i];
+//                 let luts_samples = self.train_single_tree(train_dataset, tree, i as u64, &mp);
+//                 (tree, luts_samples)
+//             })
+//             .collect();
+
+//         let summed_counts_radix: Vec<Vec<Vec<RadixCiphertext>>> = trained_trees_and_counts
+//             .iter()
+//             .map(|(_, luts_samples)| self.aggregate_tree_counts_radix(luts_samples))
+//             .collect();
+//     }
+
+//     pub fn test(&self, test_dataset: &EncryptedDatasetLut) {
+//         let mp = MultiProgress::new();
+//         let pb = make_pb(&mp, test_dataset.records.len() as u64, "_");
+
+//         let mut correct = 0;
+//         let mut total = 0;
+//         test_dataset.records.iter().for_each(|sample| {
+//             let mut votes = vec![0; self.n_classes as usize];
+//             self.trees.iter().for_each(|tree| {
+//                 let leaf =
+//                     self.probolut_inference(tree, &sample.features, &self.public_key, &self.ctx);
+//                 for c in 0..self.n_classes {
+//                     votes[c as usize] += leaf.counts[c as usize];
+//                 }
+//             });
+
+//             let (predicted_label, _) = votes
+//                 .iter()
+//                 .enumerate()
+//                 .max_by(|(_, a), (_, b)| a.cmp(b))
+//                 .unwrap();
+//             let true_label = sample.class.iter().position(|&x| x == 1).unwrap();
+//             if predicted_label == true_label {
+//                 correct += 1;
+//             }
+//             total += 1;
+//             inc_progress!(&pb);
+//         });
+
+//         finish_progress!(pb);
+//         println!("Accuracy: {}", correct as f64 / total as f64);
+//     }
+
+//     fn aggregate_tree_counts_radix(
+//         &self,
+//         luts_samples: &Vec<Vec<LUT>>,
+//     ) -> Vec<Vec<RadixCiphertext>> {
+//         let n_samples = luts_samples.len() as u64;
+//         let n_classes = luts_samples[0].len() as u64;
+//         let mut output = Vec::new();
+//         for i in 0..n_samples {
+//             let mut sample_results = Vec::new();
+//             for j in 0..n_classes {
+//                 let mut class_results =
+//                     luts_samples[i as usize][j as usize].to_many_lwe(&self.public_key, &self.ctx);
+//                 sample_results.push(class_results);
+//             }
+//             output.push(sample_results);
+//         }
+
+//         let mut tree_counts = Vec::new();
+//         for j in 0..n_classes {
+//             let mut class_count = Vec::new();
+//             for k in 0..2u32.pow(self.depth as u32) {
+//                 let mut counts_to_sum = Vec::new();
+//                 for l in 0..n_samples {
+//                     counts_to_sum.push(output[l as usize][j as usize][k as usize].clone());
+//                 }
+
+//                 let sum =
+//                     self.public_key
+//                         .lwe_add_into_radix_ciphertext(counts_to_sum, 1, &self.ctx);
+//                 class_count.push(sum);
+//             }
+//             tree_counts.push(class_count);
+//         }
+//         tree_counts
+//     }
+
+//     fn probolut_for_training(
+//         &self,
+//         tree: &TreeLUT,
+//         sample: &EncryptedSample,
+//         public_key: &PublicKey,
+//         ctx: &Context,
+//     ) -> Vec<LUT> {
+//         let leaf = self.probolut_inference(tree, &sample.features, public_key, ctx);
+
+//         let mut counts = tree.leaves.clone();
+//         for c in 0..tree.n_classes {
+//             public_key.blind_array_increment(
+//                 &mut counts[c as usize],
+//                 &leaf,
+//                 &sample.class[c as usize],
+//                 ctx,
+//             );
+//         }
+
+//         counts
+//     }
+
+//     fn probolut_inference(
+//         &self,
+//         tree: &TreeLUT,
+//         query: &LUT,
+//         public_key: &PublicKey,
+//         ctx: &Context,
+//     ) -> LWE {
+//         // First stage
+//         let index = tree.root.feature_index;
+//         let threshold = tree.root.threshold;
+//         let feature = public_key.lut_extract(&query, index as usize, ctx);
+//         let b = public_key.lt_scalar(&feature, threshold, ctx);
+//         // private_key.debug_lwe("b", &b, ctx);
+
+//         // Internal Stages
+//         let mut selector = b.clone();
+//         // private_key.debug_lwe("selector", &selector, ctx);
+//         for i in 0..tree.stages.len() {
+//             let (lut_index, lut_threshold) = &tree.stages[i];
+//             let feature_index = public_key.blind_array_access(&selector, &lut_index, ctx);
+//             let threshold = public_key.blind_array_access(&selector, &lut_threshold, ctx);
+//             let feature = public_key.blind_array_access(&feature_index, &query, ctx);
+//             let b = public_key.blind_lt_bma_mv(&feature, &threshold, ctx);
+//             selector = public_key.lwe_mul_add(&b, &selector, 2);
+//             // private_key.debug_lwe("b", &b, ctx);
+//             // private_key.debug_lwe("selector_updated", &selector, ctx);
+//         }
+//         selector
+//     }
+// }
