@@ -30,6 +30,7 @@ use crate::{create_progress_bar, finish_progress, inc_progress, make_pb};
 
 // CONSTANTS
 use crate::VERBOSE;
+const EXPORT_FOLDER: &str = "logs_radix";
 
 /// Train a single tree with a single sample.
 ///
@@ -206,52 +207,87 @@ fn aggregate_tree_counts(
     tree_counts
 }
 
+// fn aggregate_tree_counts_radix(
+//     luts_samples: &Vec<Vec<LUT>>,
+//     tree_depth: u64,
+//     public_key: &revolut::PublicKey,
+//     ctx: &revolut::Context,
+// ) -> Vec<Vec<RadixCiphertext>> {
+//     let mut start = Instant::now();
+//     let n_samples = luts_samples.len() as u64;
+//     let n_classes = luts_samples[0].len() as u64;
+//     let mut output = Vec::new();
+//     for i in 0..n_samples {
+//         let mut sample_results = Vec::new();
+//         for j in 0..n_classes {
+//             let mut class_results =
+//                 luts_samples[i as usize][j as usize].to_many_lwe(public_key, ctx);
+//             sample_results.push(class_results);
+//         }
+//         output.push(sample_results);
+//     }
+
+//     let mut end = Instant::now();
+//     println!(
+//         "Time taken to convert to LWE: {:?}",
+//         end.duration_since(start)
+//     );
+
+//     start = Instant::now();
+
+//     let mut tree_counts = Vec::new();
+//     for j in 0..n_classes {
+//         let mut class_count = Vec::new();
+//         for k in 0..2u32.pow(tree_depth as u32) {
+//             let mut counts_to_sum = Vec::new();
+//             for l in 0..n_samples {
+//                 counts_to_sum.push(output[l as usize][j as usize][k as usize].clone());
+//             }
+
+//             let sum = public_key.lwe_add_into_radix_ciphertext(counts_to_sum, 1, ctx);
+//             class_count.push(sum);
+//         }
+//         tree_counts.push(class_count);
+//     }
+
+//     end = Instant::now();
+//     println!("Time taken to sum: {:?}", end.duration_since(start));
+//     tree_counts
+// }
+
 fn aggregate_tree_counts_radix(
     luts_samples: &Vec<Vec<LUT>>,
     tree_depth: u64,
     public_key: &revolut::PublicKey,
     ctx: &revolut::Context,
 ) -> Vec<Vec<RadixCiphertext>> {
-    let mut start = Instant::now();
     let n_samples = luts_samples.len() as u64;
     let n_classes = luts_samples[0].len() as u64;
-    let mut output = Vec::new();
-    for i in 0..n_samples {
-        let mut sample_results = Vec::new();
-        for j in 0..n_classes {
-            let mut class_results =
-                luts_samples[i as usize][j as usize].to_many_lwe(public_key, ctx);
-            sample_results.push(class_results);
-        }
-        output.push(sample_results);
-    }
+    let n_leaves = 2u32.pow(tree_depth as u32);
 
-    let mut end = Instant::now();
-    println!(
-        "Time taken to convert to LWE: {:?}",
-        end.duration_since(start)
-    );
+    let output: Vec<Vec<Vec<LWE>>> = (0..n_samples)
+        .into_par_iter()
+        .map(|i| {
+            (0..n_classes)
+                .map(|j| luts_samples[i as usize][j as usize].to_many_lwe(public_key, ctx))
+                .collect()
+        })
+        .collect();
 
-    start = Instant::now();
+    (0..n_classes)
+        .into_par_iter()
+        .map(|j| {
+            (0..n_leaves)
+                .map(|k| {
+                    let counts_to_sum: Vec<_> = (0..n_samples)
+                        .map(|l| output[l as usize][j as usize][k as usize].clone())
+                        .collect();
 
-    let mut tree_counts = Vec::new();
-    for j in 0..n_classes {
-        let mut class_count = Vec::new();
-        for k in 0..2u32.pow(tree_depth as u32) {
-            let mut counts_to_sum = Vec::new();
-            for l in 0..n_samples {
-                counts_to_sum.push(output[l as usize][j as usize][k as usize].clone());
-            }
-
-            let sum = public_key.lwe_add_into_radix_ciphertext(counts_to_sum, 1, ctx);
-            class_count.push(sum);
-        }
-        tree_counts.push(class_count);
-    }
-
-    end = Instant::now();
-    println!("Time taken to sum: {:?}", end.duration_since(start));
-    tree_counts
+                    public_key.lwe_add_into_radix_ciphertext(counts_to_sum, 1, ctx)
+                })
+                .collect()
+        })
+        .collect()
 }
 
 // Test a single tree and return the selected leaf for each sample
@@ -541,7 +577,10 @@ pub fn example_xt_training_probolut_vs_clear(args: Args) {
                         println!("\n Accuracy: {} ", accuracy);
 
                         log(
-                            &format!("logs/{}_{}d_{}m_clear.csv", dataset_name, TREE_DEPTH, M),
+                            &format!(
+                                "{}/{}_{}d_{}m_clear.csv",
+                                EXPORT_FOLDER, dataset_name, TREE_DEPTH, M
+                            ),
                             &format!(
                                 "{},{},{}",
                                 accuracy,
@@ -568,6 +607,8 @@ pub fn example_xt_training_probolut_vs_clear(args: Args) {
 
                         let start = Instant::now();
                         let mp = MultiProgress::new();
+
+                        let start_training = Instant::now();
                         let forest: Vec<(TreeLUT, Vec<Vec<LUT>>)> = (0..M)
                             .into_par_iter()
                             .map(|i| {
@@ -576,7 +617,7 @@ pub fn example_xt_training_probolut_vs_clear(args: Args) {
                                     &ctx,
                                 );
 
-                                treelut.print_tree(private_key, &ctx);
+                                // treelut.print_tree(private_key, &ctx);
 
                                 let luts_samples = train_single_tree(
                                     &enc_train_dataset,
@@ -590,29 +631,11 @@ pub fn example_xt_training_probolut_vs_clear(args: Args) {
                                 (treelut, luts_samples)
                             })
                             .collect();
-                        log(
-                            &format!(
-                                "logs_1st_campaign/{}_{}d_{}m_clear.csv",
-                                dataset_name, TREE_DEPTH, M
-                            ),
-                            &format!(
-                                "{},{},{}",
-                                accuracy,
-                                training_time.as_millis(),
-                                testing_time.as_millis()
-                            ),
-                        );
 
-                        let training_time = Instant::now() - start;
+                        let training_time = Instant::now() - start_training;
 
                         // Aggregate counts
-                        let summed_counts: Vec<Vec<Vec<u64>>> = forest
-                            .iter()
-                            .map(|(_, luts_samples)| {
-                                aggregate_tree_counts(luts_samples, TREE_DEPTH, &private_key, &ctx)
-                            })
-                            .collect();
-
+                        let start_summing = Instant::now();
                         let summed_counts_radix: Vec<Vec<Vec<RadixCiphertext>>> = forest
                             .iter()
                             .map(|(_, luts_samples)| {
@@ -622,6 +645,17 @@ pub fn example_xt_training_probolut_vs_clear(args: Args) {
                                     public_key,
                                     &ctx,
                                 )
+                            })
+                            .collect();
+
+                        let summing_time = Instant::now() - start_summing;
+
+                        let total_time = Instant::now() - start;
+
+                        let summed_counts: Vec<Vec<Vec<u64>>> = forest
+                            .iter()
+                            .map(|(_, luts_samples)| {
+                                aggregate_tree_counts(luts_samples, TREE_DEPTH, &private_key, &ctx)
                             })
                             .collect();
 
@@ -675,7 +709,7 @@ pub fn example_xt_training_probolut_vs_clear(args: Args) {
 
                         let (correct, total) = evaluate_forest(
                             &selected_leaves,
-                            &summed_counts,
+                            &final_counts,
                             &enc_test_dataset,
                             M,
                             N_CLASSES,
@@ -692,13 +726,15 @@ pub fn example_xt_training_probolut_vs_clear(args: Args) {
 
                         log(
                             &format!(
-                                "logs_1st_campaign/{}_{}d_{}m_probolut.csv",
-                                dataset_name, TREE_DEPTH, M
+                                "{}/{}_{}d_{}m_probolut.csv",
+                                EXPORT_FOLDER, dataset_name, TREE_DEPTH, M
                             ),
                             &format!(
-                                "{},{},{}",
+                                "{},{},{},{},{}",
                                 accuracy,
                                 training_time.as_millis(),
+                                summing_time.as_millis(),
+                                total_time.as_millis(),
                                 testing_time.as_millis()
                             ),
                         );
