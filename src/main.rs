@@ -47,6 +47,10 @@ const EXPORT_FOREST: bool = true;
 const NUM_THREADS: usize = 10;
 const VERBOSE: bool = true;
 
+mod xt_probolut_radix;
+use xt_probolut_radix::*;
+
+
 fn main() {
     ThreadPoolBuilder::new()
         .num_threads(NUM_THREADS)
@@ -55,7 +59,8 @@ fn main() {
 
     let args = Args::parse();
 
-    xt_probolut::example_xt_training_probolut_vs_clear(args);
+    // xt_probolut::example_xt_training_probolut_vs_clear(args);
 
-    // clear_training::benchmark_clear_training(args);
+    xt_probolut_radix::train_test_probolut_vs_clear(args);
+
 }

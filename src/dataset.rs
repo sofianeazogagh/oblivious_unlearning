@@ -83,6 +83,7 @@ impl EncryptedDataset {
 pub struct EncryptedSample {
     pub class: Vec<LWE>, // one hot encoded class
     pub features: LUT,
+    pub n_features: u64,
 }
 
 impl EncryptedSample {
@@ -107,13 +108,14 @@ impl EncryptedSample {
         Self {
             class: class_lwes,
             features: feature_lut,
+            n_features: feature_vector.len() as u64,
         }
     }
 
-    pub fn print(&self, private_key: &PrivateKey, ctx: &mut Context, n_classes: u64) {
+    pub fn print(&self, private_key: &PrivateKey, ctx: &Context, n_classes: u64) {
         print!("(");
         let features_vec: Vec<u64> = self.features.to_array(private_key, ctx).to_vec();
-        print!("{:?}", &features_vec[..n_classes as usize]);
+        print!("{:?}", &features_vec[..self.n_features as usize]);
         print!(", [");
         self.class.iter().for_each(|lwe| {
             print!(", {:?}", private_key.decrypt_lwe(lwe, ctx));
@@ -125,6 +127,7 @@ impl EncryptedSample {
         Self {
             class: self.class.clone(),
             features: self.features.clone(),
+            n_features: self.n_features,
         }
     }
 }
@@ -249,7 +252,7 @@ impl EncryptedDatasetLut {
         }
     }
 
-    pub fn print(&self, private_key: &PrivateKey, ctx: &mut Context) {
+    pub fn print(&self, private_key: &PrivateKey, ctx: &Context) {
         for record in &self.records {
             record.print(private_key, ctx, self.n_classes);
         }
