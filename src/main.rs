@@ -50,7 +50,6 @@ const VERBOSE: bool = true;
 mod xt_probolut_radix;
 use xt_probolut_radix::*;
 
-
 fn main() {
     ThreadPoolBuilder::new()
         .num_threads(NUM_THREADS)
@@ -62,5 +61,4 @@ fn main() {
     // xt_probolut::example_xt_training_probolut_vs_clear(args);
 
     xt_probolut_radix::train_test_probolut_vs_clear(args);
-
 }
