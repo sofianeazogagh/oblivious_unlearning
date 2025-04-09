@@ -1,4 +1,8 @@
+## Some tests that can be run
+
 If you run `cargo test --release -- --nocapture test_compile_tree`, it is a test that will generate a random tree and a sample, then compile the tree with the sample into a comparison tree and return the selected leaf.
+
+If you run `cargo test --release -- --nocapture test_leaves_update_multiple_samples`, it is a test that will generate a random tree and multiple samples, then update the leaves of the tree with the classes of the samples.
 
 ## Directory Structure
 

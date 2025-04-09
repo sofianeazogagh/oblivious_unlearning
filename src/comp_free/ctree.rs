@@ -2,6 +2,7 @@ use crate::*;
 
 use super::dataset::*;
 use super::tree::*;
+use super::*;
 
 pub struct CTree {
     root: LWE,
@@ -9,16 +10,7 @@ pub struct CTree {
 }
 
 impl CTree {
-    pub fn new(
-        tree: &Tree,
-        sample: &EncryptedSample,
-        public_key: &PublicKey,
-        ctx: &Context,
-        private_key: &PrivateKey,
-    ) -> Self {
-        let features = sample.features.clone();
-        let classes = sample.class.clone();
-
+    pub fn new(tree: &Tree, features: &Vec<RLWE>, public_key: &PublicKey, ctx: &Context) -> Self {
         // 1. for each node in the tree, get the comp results from the sample
         // - Root
         let feature_index = tree.root.index;
@@ -28,8 +20,6 @@ impl CTree {
             root: b,
             stages: Vec::new(),
         };
-
-        private_key.debug_lwe("Root", &ctree.root, ctx);
 
         // - Stages
         for stage in tree.stages.iter() {

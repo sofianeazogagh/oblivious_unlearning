@@ -7,8 +7,8 @@ use tfhe::{
     core_crypto::prelude::{GlweCiphertext, LweCiphertext},
     shortint::parameters::*,
 };
-type LWE = LweCiphertext<Vec<u64>>;
-type RLWE = GlweCiphertext<Vec<u64>>;
+
+use super::*;
 
 #[derive(Clone)]
 pub struct ClearSample {

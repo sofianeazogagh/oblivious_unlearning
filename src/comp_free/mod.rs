@@ -10,6 +10,8 @@ pub use revolut::{radix::ByteLWE, LUT, LWE};
 use tfhe::core_crypto::prelude::*;
 use tfhe::shortint::parameters::*;
 
+type RLWE = GlweCiphertext<Vec<u64>>;
+
 // - Forest:
 // 	- trees : \[Tree]
 // 	-
