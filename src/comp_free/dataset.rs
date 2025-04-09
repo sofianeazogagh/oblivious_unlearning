@@ -1,12 +1,14 @@
 use csv;
-use std::vec;
 use rand::seq::{index::sample, SliceRandom};
 use rand::Rng;
 use revolut::{Context, PrivateKey, LUT};
-use tfhe::{core_crypto::prelude::{LweCiphertext, GlweCiphertext}, shortint::parameters::*};
+use std::vec;
+use tfhe::{
+    core_crypto::prelude::{GlweCiphertext, LweCiphertext},
+    shortint::parameters::*,
+};
 type LWE = LweCiphertext<Vec<u64>>;
 type RLWE = GlweCiphertext<Vec<u64>>;
-
 
 #[derive(Clone)]
 pub struct ClearSample {
@@ -147,12 +149,11 @@ impl EncryptedSample {
         private_key: &PrivateKey,
         ctx: &mut Context,
     ) -> Self {
-        
         let mut feature_rlwes = Vec::new();
 
         for feature in feature_vector {
             let mut vec = Vec::new();
-            for i in 0..ctx.full_message_modulus() as u64{
+            for i in 0..ctx.full_message_modulus() as u64 {
                 if (i < *feature) {
                     vec.push(0);
                 } else {
@@ -164,7 +165,7 @@ impl EncryptedSample {
 
         let one_hot_class = Self::one_hot_encode(class, n_classes);
         let mut vec_class = Vec::new();
-        for i in 0..n_classes{
+        for i in 0..n_classes {
             vec_class.push(private_key.allocate_and_encrypt_lwe(one_hot_class[i as usize], ctx));
         }
         Self {
@@ -175,7 +176,11 @@ impl EncryptedSample {
 
     pub fn print(&self, private_key: &PrivateKey, ctx: &Context) {
         print!("([");
-        let features_vec: Vec<Vec<u64>> = self.features.iter().map(|x| private_key.decrypt_and_decode_glwe (x, ctx)[..16].to_vec()).collect();
+        let features_vec: Vec<Vec<u64>> = self
+            .features
+            .iter()
+            .map(|x| private_key.decrypt_and_decode_glwe(x, ctx)[..16].to_vec())
+            .collect();
         print!("{:?}", &features_vec[..4]);
         print!(", [");
         self.class.iter().for_each(|lwe| {

@@ -1,1 +1,15 @@
+pub mod ctree;
 pub mod dataset;
+pub mod forest;
+pub mod tree;
+
+// REVOLUT
+pub use revolut::{radix::ByteLWE, LUT, LWE};
+
+// TFHE
+use tfhe::core_crypto::prelude::*;
+use tfhe::shortint::parameters::*;
+
+// - Forest:
+// 	- trees : \[Tree]
+// 	-
