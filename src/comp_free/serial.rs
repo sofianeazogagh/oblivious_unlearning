@@ -166,8 +166,7 @@ mod tests {
         let forest = Forest::new(n_trees, depth, n_classes, f, &public_key, &ctx);
 
         // Define a file path for saving the forest
-        let filepath =
-            "/Users/sofianeazogagh/Desktop/PROBONITE/PROBONITE/src/comp_free/test_forest.json";
+        let filepath = "./src/comp_free/test_forest.json";
 
         // Save the forest to a file
         println!("Saving forest to file");
