@@ -1,12 +1,19 @@
+use std::fs::File;
+use std::io::Read;
+
 use rayon::iter::IntoParallelRefMutIterator;
+use serde_json::json;
+use serde_json::Value;
 
 use crate::*;
 
 use super::dataset::*;
 use super::tree::*;
 pub struct Forest {
-    trees: Vec<Tree>,
+    pub trees: Vec<Tree>,
 }
+
+const SEED: u64 = 1;
 
 impl Forest {
     pub fn new(
@@ -19,7 +26,8 @@ impl Forest {
     ) -> Self {
         let mut trees = Vec::new();
         for _ in 0..n_trees {
-            let tree: Tree = Tree::new_random_tree(depth, n_classes, f, public_key, ctx);
+            let tree: Tree =
+                Tree::new_random_tree_with_seed(depth, n_classes, f, public_key, ctx, SEED);
             trees.push(tree);
         }
         Self { trees }
@@ -27,7 +35,7 @@ impl Forest {
 
     pub fn train(&mut self, dataset: &EncryptedDataset, public_key: &PublicKey, ctx: &Context) {
         let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(1)
+            .num_threads(10)
             .build()
             .unwrap();
         pool.install(|| {

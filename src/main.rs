@@ -48,7 +48,7 @@ const GENERATE_TREE: bool = true;
 #[allow(dead_code)]
 const EXPORT_FOREST: bool = true;
 const NUM_THREADS: usize = 10;
-const VERBOSE: bool = true;
+const VERBOSE: bool = false;
 
 // mod xt_probolut_radix;
 // use xt_probolut_radix::*;

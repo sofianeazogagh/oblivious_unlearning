@@ -1,6 +1,7 @@
 pub mod ctree;
 pub mod dataset;
 pub mod forest;
+pub mod serial;
 pub mod tree;
 
 // REVOLUT

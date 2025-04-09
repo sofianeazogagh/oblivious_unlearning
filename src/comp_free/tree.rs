@@ -1,4 +1,10 @@
+use rand::rngs::StdRng;
+use rand::Rng;
+use rand::SeedableRng;
+use rayon::iter::IntoParallelRefIterator;
 use revolut::radix::NyblByteLUT;
+use serde_json::json;
+use serde_json::Value;
 use tfhe::boolean::public_key;
 
 use super::ctree::*;
@@ -88,6 +94,53 @@ impl Tree {
         tree
     }
 
+    pub fn new_random_tree_with_seed(
+        depth: u64,
+        n_classes: u64,
+        f: u64,
+        public_key: &PublicKey,
+        ctx: &Context,
+        seed: u64,
+    ) -> Self {
+        let mut tree = Self::new(depth, n_classes);
+
+        // Create a seeded random number generator
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        // Generate the root
+        tree.root.threshold = rng.gen::<u64>() % f;
+        tree.root.index = rng.gen::<u64>() % f;
+
+        // Generate the nodes
+        for level_index in 1..depth {
+            // Number of nodes at this level is 2^level_index
+            let num_nodes = 2u64.pow(level_index as u32);
+
+            let mut stage = Vec::new();
+            for _ in 0..num_nodes {
+                stage.push(Node {
+                    threshold: rng.gen::<u64>() % f,
+                    index: rng.gen::<u64>() % f,
+                });
+            }
+            tree.stages.push(stage);
+        }
+
+        // Initialize the leaves to 0
+        let num_leaves = 2u64.pow(depth as u32);
+        for _ in 0..num_leaves {
+            let leaf = Leaf {
+                classes: vec![
+                    ByteLWE::from_byte_trivially(0x00, ctx, public_key);
+                    n_classes as usize
+                ],
+            };
+            tree.leaves.push(leaf);
+        }
+
+        tree
+    }
+
     pub fn leaves_update(
         &mut self,
         selector: &LWE,
@@ -149,6 +202,8 @@ impl Tree {
             let ctree = CTree::new(self, &sample.features, public_key, ctx);
             // Traverse the tree
             let selector = ctree.evaluate(public_key, ctx);
+
+            // TODO : We could do this in parallel if we make batch updates
             // Update the leaves
             self.leaves_update(&selector, &sample.class, public_key, ctx);
 
@@ -183,12 +238,6 @@ impl Tree {
         }
         println!("-----------------------------");
     }
-
-    // pub fn to_json(&self, ctx: &Context)
-    // pub fn save_to_file(&self, filepath: &str, ctx: &Context)
-
-    // pub fn from_json(json: &serde_json::Value, ctx: &Context)
-    // pub fn load_from_file(filepath: &str, ctx: &Context)
 }
 
 #[cfg(test)]
@@ -212,7 +261,7 @@ mod tests {
         let f = ctx.parameters().polynomial_size.0 as u64;
 
         // Create a new tree
-        let tree = Tree::new_random_tree(depth, n_classes, f, &public_key, &ctx);
+        let tree = Tree::new_random_tree_with_seed(depth, n_classes, f, &public_key, &ctx, 1);
 
         // Print the tree
         tree.print_tree(&private_key, &ctx);
