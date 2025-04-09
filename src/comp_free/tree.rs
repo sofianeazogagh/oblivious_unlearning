@@ -151,6 +151,12 @@ impl Tree {
             let selector = ctree.evaluate(public_key, ctx);
             // Update the leaves
             self.leaves_update(&selector, &sample.class, public_key, ctx);
+
+            if VERBOSE {
+                println!("Tree: ");
+                let private_key = key(ctx.parameters());
+                self.print_tree(&private_key, ctx);
+            }
         }
     }
 

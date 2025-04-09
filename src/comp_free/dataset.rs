@@ -218,12 +218,14 @@ impl EncryptedDataset {
 
         for result in rdr.records() {
             let record = result.unwrap();
-            let mut label: u64 = 0;
+            let mut class: u64 = 0;
             let mut record_vec = Vec::new();
             for (i, field) in record.iter().enumerate() {
                 let value = field.parse::<u64>().unwrap();
+
+                // last field is the class
                 if i == record.len() - 1 {
-                    label = value;
+                    class = value;
                 } else {
                     record_vec.push(value);
 
@@ -234,7 +236,7 @@ impl EncryptedDataset {
             }
             records.push(EncryptedSample::make_encrypted_sample(
                 &record_vec,
-                &label,
+                &class,
                 n_classes,
                 private_key,
                 ctx,

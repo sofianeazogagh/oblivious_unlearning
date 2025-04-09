@@ -1,3 +1,5 @@
+use rayon::iter::IntoParallelRefMutIterator;
+
 use crate::*;
 
 use super::dataset::*;
@@ -17,16 +19,22 @@ impl Forest {
     ) -> Self {
         let mut trees = Vec::new();
         for _ in 0..n_trees {
-            let tree = Tree::new_random_tree(depth, n_classes, f, public_key, ctx);
+            let tree: Tree = Tree::new_random_tree(depth, n_classes, f, public_key, ctx);
             trees.push(tree);
         }
         Self { trees }
     }
 
     pub fn train(&mut self, dataset: &EncryptedDataset, public_key: &PublicKey, ctx: &Context) {
-        for tree in self.trees.iter_mut() {
-            tree.train(dataset, public_key, ctx);
-        }
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        pool.install(|| {
+            self.trees.par_iter_mut().for_each(|tree| {
+                tree.train(dataset, public_key, ctx);
+            });
+        });
     }
     pub fn print(&self, private_key: &PrivateKey, ctx: &Context) {
         for tree in self.trees.iter() {
@@ -44,16 +52,18 @@ mod tests {
         let private_key = key(ctx.parameters());
         let public_key = &private_key.public_key;
 
-        let mut forest = Forest::new(10, 10, 10, 10, &public_key, &ctx);
-
         let dataset = EncryptedDataset::from_file(
-            "/Users/sofianeazogagh/Desktop/PROBONITE/PROBONITE/data/iris/iris.csv".to_string(),
+            "data/iris-uci/iris.csv".to_string(),
             &private_key,
             &mut ctx,
             3,
         );
 
+        let start = Instant::now();
+        let mut forest = Forest::new(10, 4, dataset.n_classes, dataset.f, &public_key, &ctx);
         forest.train(&dataset, &public_key, &ctx);
+        let duration = start.elapsed();
+        println!("Time taken: {:?}", duration);
 
         forest.print(&private_key, &ctx);
     }

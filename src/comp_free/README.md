@@ -4,6 +4,8 @@ If you run `cargo test --release -- --nocapture test_compile_tree`, it is a test
 
 If you run `cargo test --release -- --nocapture test_leaves_update_multiple_samples`, it is a test that will generate a random tree and multiple samples, then update the leaves of the tree with the classes of the samples.
 
+If you run `cargo test --release -- --nocapture test_train_forest`, it is a test that will generate a random forest and train it on the iris dataset. It is not parallelized so you can see live the training of the forest. But it can be parallelized by changing the number of threads in the `ThreadPoolBuilder`.
+
 ## Directory Structure
 
 ```
