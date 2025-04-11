@@ -1,14 +1,16 @@
 // src/comp_free/serial.rs
 
-use super::*;
+use crate::comp_free::clear::*;
 use crate::comp_free::forest::Forest;
 use crate::comp_free::tree::{Leaf, Node, Tree};
-use crate::ByteLWE;
+use crate::radix::ByteLWE;
 use revolut::{Context, PrivateKey, PublicKey};
 use serde_json::{json, Value};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::time::Duration;
+use crate::LWE;
+use crate::PARAM_MESSAGE_4_CARRY_0;
 
 impl Tree {
     pub fn to_json(&self, private_key: &PrivateKey, ctx: &Context) -> Value {
@@ -55,7 +57,7 @@ impl Tree {
         json!({
             "root": root,
             "stages": stages,
-            // "leaves": leaves,
+            "leaves": leaves,
             "final_leaves": final_leaves,
             "depth": self.depth,
             "n_classes": self.n_classes,
@@ -112,8 +114,7 @@ impl Tree {
         Tree {
             root,
             stages,
-            // leaves,
-            leaves: Vec::new(),
+            leaves,
             depth: json["depth"].as_u64().unwrap(),
             n_classes: json["n_classes"].as_u64().unwrap(),
             final_leaves,
@@ -177,6 +178,77 @@ impl Forest {
             n_trees, depth, dataset_name, duration
         )
         .unwrap();
+    }
+}
+
+impl ClearTree {
+    pub fn from_json(json_data: &Value, ctx: &Context, public_key: &PublicKey) -> Self {
+        let root = ClearRoot {
+            threshold: json_data["root"]["threshold"].as_u64().unwrap(),
+            feature_index: json_data["root"]["index"].as_u64().unwrap(),
+        };
+
+        let nodes = json_data["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|stage| {
+                stage
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .enumerate()    
+                    .map(|(i, node)| ClearInternalNode {
+                        threshold: node["threshold"].as_u64().unwrap(),
+                        feature_index: node["index"].as_u64().unwrap(),
+                        id: i as u64,
+                    })
+                    .collect()
+            })
+            .collect();
+
+        let leaves = json_data["leaves"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+            .map(|(i, leaf)| ClearLeaf {
+                counts: leaf["classes"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|count| count.as_u64().unwrap())
+                    .collect(),
+                id: i as u64,
+            })
+            .collect();
+
+        ClearTree {
+            root,
+            nodes,
+            leaves,
+            depth: json_data["depth"].as_u64().unwrap(),
+            n_classes: json_data["n_classes"].as_u64().unwrap(),
+        }
+    }
+}
+
+impl ClearForest {
+    pub fn load_from_file(filepath: &str, ctx: &Context, public_key: &PublicKey) -> Self {
+        let mut file = File::open(filepath).expect("Unable to open file");
+        let mut json_string = String::new();
+        file.read_to_string(&mut json_string)
+            .expect("Unable to read data");
+
+        let json_data: Value = serde_json::from_str(&json_string).unwrap();
+        let trees: Vec<ClearTree> = json_data["trees"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tree_json| ClearTree::from_json(tree_json, ctx, public_key))
+            .collect();
+
+        ClearForest { trees }
     }
 }
 
@@ -249,5 +321,34 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_clear_forest_from_file() {
+        let filepath = "./src/comp_free/test_forest.json";
+        let ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
+        let private_key = key(ctx.parameters());
+        let public_key = &private_key.public_key;
+        let clear_forest = ClearForest::load_from_file(filepath, &ctx, &public_key);
+
+        assert_eq!(clear_forest.trees.len(), 5);
+        assert_eq!(clear_forest.trees[0].depth, 3);
+        assert_eq!(clear_forest.trees[0].n_classes, 2);
+        assert_eq!(clear_forest.trees[0].leaves[0].counts[0], 1);
+        assert_eq!(clear_forest.trees[0].leaves[0].counts[1], 0);
+
+        assert_eq!(clear_forest.trees[0].root.threshold, 97);
+        assert_eq!(clear_forest.trees[0].root.feature_index, 10);
+
+        assert_eq!(clear_forest.trees[0].nodes[0][0].threshold, 474);
+        assert_eq!(clear_forest.trees[0].nodes[0][0].feature_index, 3);
+        assert_eq!(clear_forest.trees[0].nodes[0][0].id, 0);
+
+        assert_eq!(clear_forest.trees[0].nodes[0][1].threshold, 1108);
+        assert_eq!(clear_forest.trees[0].nodes[0][1].feature_index, 11);
+        assert_eq!(clear_forest.trees[0].nodes[0][1].id, 1);
+
+        
+        
     }
 }
