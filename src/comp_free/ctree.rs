@@ -4,6 +4,8 @@ use super::dataset::*;
 use super::tree::*;
 use super::*;
 
+const DEBUG: bool = true;
+
 pub struct CTree {
     root: LWE,
     stages: Vec<Vec<LWE>>,
@@ -64,7 +66,7 @@ impl CTree {
     }
 
     pub fn print(&self, private_key: &PrivateKey, ctx: &Context) {
-        println!("-----------[ LWE(b) ]-----------");
+        println!("-----------[ CTree ]-----------");
         let root = private_key.decrypt_lwe(&self.root, ctx);
         println!("Root: {}", root);
         for stage in self.stages.iter() {

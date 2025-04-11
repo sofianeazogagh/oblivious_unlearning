@@ -17,6 +17,7 @@ pub struct Forest {
 const SEED: u64 = 1;
 const EXPORT: bool = true;
 const NUM_THREADS: usize = 4;
+const SEEDED: bool = false;
 
 impl Forest {
     pub fn new(
@@ -29,16 +30,22 @@ impl Forest {
     ) -> Self {
         let mut trees = Vec::new();
         for _ in 0..n_trees {
-            let tree: Tree =
-                Tree::new_random_tree_with_seed(depth, n_classes, f, public_key, ctx, SEED);
-            trees.push(tree);
+            if SEEDED {
+                let tree: Tree =
+                    Tree::new_random_tree_with_seed(depth, n_classes, f, public_key, ctx, SEED);
+                trees.push(tree);
+            } else {
+                let tree: Tree = Tree::new_random_tree(depth, n_classes, f, public_key, ctx);
+                trees.push(tree);
+            }
         }
         Self { trees }
     }
 
     pub fn train(&mut self, dataset: &EncryptedDataset, public_key: &PublicKey, ctx: &Context) {
+        println!("Dataset size: {}", dataset.records.len());
         let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(NUM_THREADS)
+            .num_threads(1)
             .build()
             .unwrap();
         pool.install(|| {
@@ -113,7 +120,7 @@ mod tests {
             3,
         );
 
-        let n_trees = 2;
+        let n_trees = 1;
         let depth = 3;
         let mut forest = Forest::new(
             n_trees,
