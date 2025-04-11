@@ -153,7 +153,7 @@ impl EncryptedSample {
 
         for feature in feature_vector {
             let mut vec = Vec::new();
-            for i in 0..ctx.full_message_modulus() as u64 {
+            for i in 0..ctx.polynomial_size().0 as u64 {
                 if (i < *feature) {
                     vec.push(0);
                 } else {
@@ -211,7 +211,10 @@ impl EncryptedDataset {
         ctx: &mut Context,
         n_classes: u64,
     ) -> Self {
-        let mut rdr = csv::Reader::from_path(filepath).unwrap();
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_path(filepath)
+            .unwrap();
         let mut records = Vec::new();
         let mut f = 0;
         let mut max_features = std::u64::MIN;

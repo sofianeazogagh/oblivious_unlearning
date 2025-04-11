@@ -65,7 +65,8 @@ impl Tree {
         let mut tree = Self::new(depth, n_classes);
 
         // Generate the root
-        tree.root.threshold = rand::random::<u64>() % f as u64;
+        let N = ctx.polynomial_size().0 as u64;
+        tree.root.threshold = rand::random::<u64>() % N;
         tree.root.index = rand::random::<u64>() % f;
 
         // Generate the nodes
@@ -76,7 +77,7 @@ impl Tree {
             let mut stage = Vec::new();
             for _ in 0..num_nodes {
                 stage.push(Node {
-                    threshold: rand::random::<u64>() % f as u64,
+                    threshold: rand::random::<u64>() % N,
                     index: rand::random::<u64>() % f,
                 });
             }
@@ -215,9 +216,10 @@ impl Tree {
         let leaves = self.leaves.clone();
         let mut majority = Vec::new();
 
+        let private_key = key(ctx.parameters());
         for leaf in leaves.iter() {
             let maj = public_key.blind_argmax_byte_lwe(&leaf.classes, ctx);
-            majority.push(maj.lo); // We take the lo part of the LWE since the classes are < 16
+            majority.push(maj.lo); // We take the lo part of the ByteLWE since the classes are < 16
         }
 
         // for leaf in leaves.iter() {
@@ -266,17 +268,18 @@ impl Tree {
             println!("");
         }
         println!("");
-        // for leaf in self.leaves.iter() {
-        //     print!("[");
-        //     // for (i, c) in leaf.classes.iter().enumerate() {
-        //     //     // More fancy print
-        //     //     if i == leaf.classes.len() - 1 {
-        //     //         print!("{}", c.to_byte(ctx, private_key));
-        //     //     } else {
-        //     //         print!("{},", c.to_byte(ctx, private_key));
-        //     //     }
-        //     // }
-        // }
+        for leaf in self.leaves.iter() {
+            print!("[");
+            for (i, c) in leaf.classes.iter().enumerate() {
+                // More fancy print
+                if i == leaf.classes.len() - 1 {
+                    print!("{}", c.to_byte(ctx, private_key));
+                } else {
+                    print!("{},", c.to_byte(ctx, private_key));
+                }
+            }
+            print!("]");
+        }
         println!("-----------------------------");
     }
 }
