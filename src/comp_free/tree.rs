@@ -9,6 +9,7 @@ use tfhe::boolean::public_key;
 
 use super::ctree::*;
 use super::dataset::*;
+use super::RLWE;
 
 use crate::*;
 
@@ -25,6 +26,7 @@ pub struct Node {
 
 #[derive(Clone)]
 pub struct Leaf {
+    // pub classes: NyblByteLUT,
     pub classes: Vec<ByteLWE>,
 }
 
@@ -32,6 +34,7 @@ pub struct Tree {
     pub root: Node,
     pub stages: Vec<Vec<Node>>, // Stages[i] is the i-th stages of the tree
     pub leaves: Vec<Leaf>,
+    pub final_leaves: Vec<LWE>,
     pub depth: u64,
     pub n_classes: u64,
 }
@@ -48,6 +51,7 @@ impl Tree {
             leaves: Vec::new(),
             depth,
             n_classes,
+            final_leaves: Vec::new(),
         }
     }
 
@@ -88,6 +92,9 @@ impl Tree {
                     n_classes as usize
                 ],
             };
+            // let leaf = Leaf {
+            //     classes: NyblByteLUT::from_bytes_trivially(&[0x00; 16], ctx),
+            // };
             tree.leaves.push(leaf);
         }
 
@@ -108,7 +115,8 @@ impl Tree {
         let mut rng = StdRng::seed_from_u64(seed);
 
         // Generate the root
-        tree.root.threshold = rng.gen::<u64>() % f;
+        let N = ctx.polynomial_size().0 as u64;
+        tree.root.threshold = rng.gen::<u64>() % N;
         tree.root.index = rng.gen::<u64>() % f;
 
         // Generate the nodes
@@ -119,7 +127,7 @@ impl Tree {
             let mut stage = Vec::new();
             for _ in 0..num_nodes {
                 stage.push(Node {
-                    threshold: rng.gen::<u64>() % f,
+                    threshold: rng.gen::<u64>() % N,
                     index: rng.gen::<u64>() % f,
                 });
             }
@@ -135,6 +143,9 @@ impl Tree {
                     n_classes as usize
                 ],
             };
+            // let leaf = Leaf {
+            //     classes: NyblByteLUT::from_bytes_trivially(&[0x00; 16], ctx),
+            // };
             tree.leaves.push(leaf);
         }
 
@@ -148,15 +159,6 @@ impl Tree {
         public_key: &PublicKey,
         ctx: &Context,
     ) {
-        // First convert the vector class to a vector of ByteLWE
-        let byte_class: Vec<ByteLWE> = class
-            .iter()
-            .map(|c| ByteLWE {
-                lo: c.clone(),
-                hi: public_key.allocate_and_trivially_encrypt_lwe(0, ctx),
-            })
-            .collect();
-
         // Pack the leaves into a NyblByteLUT
         let leaves = self.leaves.clone();
         let mut nbluts = Vec::new();
@@ -170,11 +172,23 @@ impl Tree {
         }
 
         // Blind increment each NyblByteLUTs at the position of the selector with the class
-        // TODO : Could be improved since we know that the value added is 0 or 1.
-        // TODO : Or we could add a bunch of LWE (i.e a bunch of samples < 16) then convert it to a ByteLWE.
         for i in 0..self.n_classes {
-            nbluts[i as usize].blind_array_add(&selector, &byte_class[i as usize], ctx, public_key);
+            nbluts[i as usize].blind_array_maybe_inc(
+                &selector,
+                &class[i as usize],
+                ctx,
+                public_key,
+            );
         }
+
+        // for i in 0..self.n_classes {
+        //     self.leaves[i as usize].classes.blind_array_maybe_inc(
+        //         &selector,
+        //         &class[i as usize],
+        //         ctx,
+        //         public_key,
+        //     );
+        // }
 
         // The new leaves are the Unpacked NyblByteLUTs
 
@@ -186,7 +200,7 @@ impl Tree {
 
         //- Update the leaves
         let p = unpacked_nbluts[0].len();
-        for j in 0..p {
+        for j in 0..2u64.pow(self.depth as u32) {
             let mut new_leaf = Vec::new();
             for i in 0..self.n_classes {
                 new_leaf.push(unpacked_nbluts[i as usize][j as usize].clone());
@@ -194,6 +208,25 @@ impl Tree {
             let new_leaf = Leaf { classes: new_leaf };
             self.leaves[j as usize] = new_leaf;
         }
+    }
+
+    // Function to do at the end of the training
+    pub fn leaves_majority(&mut self, public_key: &PublicKey, ctx: &Context) {
+        let leaves = self.leaves.clone();
+        let mut majority = Vec::new();
+
+        for leaf in leaves.iter() {
+            let maj = public_key.blind_argmax_byte_lwe(&leaf.classes, ctx);
+            majority.push(maj.lo); // We take the lo part of the LWE since the classes are < 16
+        }
+
+        // for leaf in leaves.iter() {
+        //     let maj =
+        //         public_key.blind_argmax_byte_lwe(&leaf.classes.to_many_blwes(public_key, ctx), ctx);
+        //     majority.push(maj.lo); // We take the lo part of the LWE since the classes are < 16
+        // }
+
+        self.final_leaves = majority;
     }
 
     pub fn train(&mut self, dataset: &EncryptedDataset, public_key: &PublicKey, ctx: &Context) {
@@ -215,6 +248,14 @@ impl Tree {
         }
     }
 
+    pub fn test(&self, sample_features: &Vec<RLWE>, public_key: &PublicKey, ctx: &Context) -> LWE {
+        let ctree = CTree::new(self, sample_features, public_key, ctx);
+        let selector = ctree.evaluate(public_key, ctx);
+
+        let lut_leaves = LUT::from_vec_of_lwe(&self.final_leaves, public_key, ctx);
+        public_key.blind_array_access(&selector, &lut_leaves, ctx)
+    }
+
     pub fn print_tree(&self, private_key: &PrivateKey, ctx: &Context) {
         println!("-----------[(t,f)]-----------");
         println!("Root: ({},{})", self.root.threshold, self.root.index);
@@ -225,17 +266,17 @@ impl Tree {
             println!("");
         }
         println!("");
-        for leaf in self.leaves.iter() {
-            print!("[");
-            for (i, c) in leaf.classes.iter().enumerate() {
-                if i == leaf.classes.len() - 1 {
-                    print!("{}", c.to_byte(ctx, private_key));
-                } else {
-                    print!("{},", c.to_byte(ctx, private_key));
-                }
-            }
-            print!("]");
-        }
+        // for leaf in self.leaves.iter() {
+        //     print!("[");
+        //     // for (i, c) in leaf.classes.iter().enumerate() {
+        //     //     // More fancy print
+        //     //     if i == leaf.classes.len() - 1 {
+        //     //         print!("{}", c.to_byte(ctx, private_key));
+        //     //     } else {
+        //     //         print!("{},", c.to_byte(ctx, private_key));
+        //     //     }
+        //     // }
+        // }
         println!("-----------------------------");
     }
 }

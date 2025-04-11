@@ -6,8 +6,9 @@ use crate::comp_free::tree::{Leaf, Node, Tree};
 use crate::ByteLWE;
 use revolut::{Context, PrivateKey, PublicKey};
 use serde_json::{json, Value};
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
+use std::time::Duration;
 
 impl Tree {
     pub fn to_json(&self, private_key: &PrivateKey, ctx: &Context) -> Value {
@@ -45,10 +46,17 @@ impl Tree {
             })
             .collect();
 
+        let final_leaves: Vec<u64> = self
+            .final_leaves
+            .iter()
+            .map(|c| private_key.decrypt_lwe(c, ctx))
+            .collect();
+
         json!({
             "root": root,
             "stages": stages,
-            "leaves": leaves,
+            // "leaves": leaves,
+            "final_leaves": final_leaves,
             "depth": self.depth,
             "n_classes": self.n_classes,
         })
@@ -94,12 +102,21 @@ impl Tree {
             })
             .collect();
 
+        let final_leaves: Vec<LWE> = json["final_leaves"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| public_key.allocate_and_trivially_encrypt_lwe(c.as_u64().unwrap(), ctx))
+            .collect();
+
         Tree {
             root,
             stages,
-            leaves,
+            // leaves,
+            leaves: Vec::new(),
             depth: json["depth"].as_u64().unwrap(),
             n_classes: json["n_classes"].as_u64().unwrap(),
+            final_leaves,
         }
     }
 }
@@ -138,6 +155,28 @@ impl Forest {
             .collect();
 
         Forest { trees }
+    }
+
+    pub fn save_perf_to_file(
+        &self,
+        duration: Duration,
+        dataset_name: &str,
+        n_trees: u64,
+        depth: u64,
+    ) {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .create(true)
+            .open("perf.csv")
+            .unwrap();
+
+        writeln!(
+            file,
+            "{},{},{},{:?}",
+            n_trees, depth, dataset_name, duration
+        )
+        .unwrap();
     }
 }
 
