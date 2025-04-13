@@ -63,16 +63,6 @@ impl Tree {
             })
             .collect();
 
-        // let leaves_lut: Vec<Value> = self
-        //     .leaves_lut
-        //     .iter()
-        //     .map(|leaf| {
-        //         json!({
-        //             "classes": leaf.class.to_bytes(&private_key.public_key, private_key, ctx)
-        //         })
-        //     })
-        //     .collect();
-
         let final_leaves: Vec<u64> = self
             .final_leaves
             .iter()
@@ -204,22 +194,25 @@ impl Forest {
 
     pub fn save_perf_to_file(
         &self,
-        duration: Duration,
+        file_path: &str,
+        duration_train: Duration,
+        duration_test: Duration,
         dataset_name: &str,
         n_trees: u64,
         depth: u64,
+        accuracy: f64,
     ) {
         let mut file = OpenOptions::new()
             .write(true)
             .append(true)
             .create(true)
-            .open("perf.csv")
+            .open(file_path)
             .unwrap();
 
         writeln!(
             file,
-            "{},{},{},{:?}",
-            n_trees, depth, dataset_name, duration
+            "{},{},{},{:?},{:?},{}",
+            n_trees, depth, dataset_name, duration_train, duration_test, accuracy
         )
         .unwrap();
     }
@@ -351,19 +344,6 @@ mod tests {
                     assert_eq!(original_node.index, loaded_node.index);
                 }
             }
-
-            // for (original_leaf, loaded_leaf) in
-            //     original_tree.leaves.iter().zip(loaded_tree.leaves.iter())
-            // {
-            //     for (original_class, loaded_class) in
-            //         original_leaf.classes.iter().zip(loaded_leaf.classes.iter())
-            //     {
-            //         assert_eq!(
-            //             original_class.to_byte(&ctx, &private_key),
-            //             loaded_class.to_byte(&ctx, &private_key)
-            //         );
-            //     }
-            // }
             for (original_leaf, loaded_leaf) in original_tree
                 .leaves_lut
                 .iter()
