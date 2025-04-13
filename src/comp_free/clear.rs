@@ -160,8 +160,6 @@ impl ClearTree {
         // tree.root.threshold = rng.gen_range(features_domain.0..=features_domain.1) as f64;
         tree.root.threshold = rand::random::<u64>() % max_features as u64;
 
-        tree.root.print();
-
         for idx in 1..depth {
             let mut level = Vec::new();
             for j in 0..(2u64.pow(idx as u32) as usize) {
@@ -311,6 +309,7 @@ mod tests {
         best_model.save_to_file(&filepath);
 
         println!("Best accuracy: {}", best_accuracy);
+        println!("Best model saved to: {}", filepath);
     }
 
 }

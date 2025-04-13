@@ -339,7 +339,6 @@ impl ClearForest {
     pub fn save_to_file(&self, filepath: &str) {
         let json_data = self.to_json();
         let json_string = serde_json::to_string_pretty(&json_data).unwrap();
-        println!("Filepath: {}", filepath);
         let mut file = File::create(filepath).expect("Unable to create file");
         file.write_all(json_string.as_bytes())
             .expect("Unable to write data");

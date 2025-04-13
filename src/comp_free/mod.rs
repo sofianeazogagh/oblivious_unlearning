@@ -6,7 +6,7 @@ pub mod serial;
 pub mod tree;
 
 use revolut::radix::{ByteByteLUT, NyblByteLUT};
-use revolut::{key, Context, PublicKey};
+// use revolut::{key, Context, PublicKey};
 // REVOLUT
 pub use revolut::{radix::ByteLWE, LUT, LWE, Context, PrivateKey, PublicKey};
 
