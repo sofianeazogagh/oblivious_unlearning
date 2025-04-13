@@ -32,6 +32,6 @@ comp_free/
 To run the campaign, you can use the following command:
 
 ```
-nohup cargo test --release -- --nocapture test_bench_best > campaign_1.log &
+nohup cargo test --release -- --nocapture test_bench_best > campaign_3.log &
 ```
 

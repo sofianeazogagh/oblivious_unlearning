@@ -25,8 +25,7 @@ const PRE_SEEDED: bool = false;
 const EXPORT: bool = true;
 const NUM_THREADS: usize = 4;
 
-// const FOLDER: &str = "./src/comp_free/campaign_1";
-const FOLDER: &str = "./src/comp_free/campaign_1";
+const FOLDER: &str = "./src/comp_free/campaign_3";
 
 impl Forest {
     pub fn new(
