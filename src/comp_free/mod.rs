@@ -6,7 +6,7 @@ pub mod serial;
 pub mod tree;
 
 // REVOLUT
-pub use revolut::{radix::ByteLWE, LUT, LWE};
+pub use revolut::{radix::ByteLWE, LUT, LWE, Context, PrivateKey, PublicKey};
 
 // TFHE
 use tfhe::core_crypto::prelude::*;

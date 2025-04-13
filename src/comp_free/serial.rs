@@ -217,9 +217,13 @@ impl ClearTree {
                     .as_array()
                     .unwrap()
                     .iter()
-                    .map(|count| count.as_u64().unwrap())
+                    .map(|count| 
+                        // count.as_u64().unwrap()
+                        0
+                    )
                     .collect(),
                 id: i as u64,
+                label: 0,
             })
             .collect();
 
@@ -254,6 +258,8 @@ impl ClearForest {
 
 #[cfg(test)]
 mod tests {
+    use crate::comp_free::clear;
+
     use super::*;
     use revolut::{key, Context, PrivateKey, PublicKey};
     use std::fs;
@@ -268,10 +274,10 @@ mod tests {
         let public_key = &private_key.public_key;
 
         // Define parameters for the forest
-        let n_trees = 5;
-        let depth = 3;
-        let n_classes = 2;
-        let f = ctx.full_message_modulus() as u64;
+        let n_trees = 64;
+        let depth = 4;
+        let n_classes = 3;
+        let f = 4; // 4 features for the iris dataset
 
         // Create a new forest
         let forest = Forest::new(n_trees, depth, n_classes, f, &public_key, &ctx);
@@ -331,23 +337,29 @@ mod tests {
         let public_key = &private_key.public_key;
         let clear_forest = ClearForest::load_from_file(filepath, &ctx, &public_key);
 
-        assert_eq!(clear_forest.trees.len(), 5);
-        assert_eq!(clear_forest.trees[0].depth, 3);
-        assert_eq!(clear_forest.trees[0].n_classes, 2);
-        assert_eq!(clear_forest.trees[0].leaves[0].counts[0], 1);
-        assert_eq!(clear_forest.trees[0].leaves[0].counts[1], 0);
+        let forest = Forest::load_from_file(filepath, &ctx, public_key);
 
-        assert_eq!(clear_forest.trees[0].root.threshold, 97);
-        assert_eq!(clear_forest.trees[0].root.feature_index, 10);
+        assert_eq!(clear_forest.trees.len(), forest.trees.len());
+        assert_eq!(clear_forest.trees[0].depth, forest.trees[0].depth);
+        assert_eq!(clear_forest.trees[0].n_classes, forest.trees[0].n_classes);
 
-        assert_eq!(clear_forest.trees[0].nodes[0][0].threshold, 474);
-        assert_eq!(clear_forest.trees[0].nodes[0][0].feature_index, 3);
-        assert_eq!(clear_forest.trees[0].nodes[0][0].id, 0);
+        
+        for i in 0.. clear_forest.trees.len() {
+            for j in 0.. clear_forest.trees[i].nodes.len() {
+                for k in 0.. clear_forest.trees[i].nodes[j].len() {
+                    assert_eq!(clear_forest.trees[i].nodes[j][k].threshold, forest.trees[i].stages[j][k].threshold);
+                    assert_eq!(clear_forest.trees[i].nodes[j][k].feature_index, forest.trees[i].stages[j][k].index);
+                }
 
-        assert_eq!(clear_forest.trees[0].nodes[0][1].threshold, 1108);
-        assert_eq!(clear_forest.trees[0].nodes[0][1].feature_index, 11);
-        assert_eq!(clear_forest.trees[0].nodes[0][1].id, 1);
+                
+            }
 
+            for k in 0.. clear_forest.trees[i].leaves.len() {
+                for l in 0.. clear_forest.trees[i].leaves[k].counts.len() {
+                    assert_eq!(clear_forest.trees[i].leaves[k].counts[l], forest.trees[i].leaves[k].classes[l].to_byte(&ctx, &private_key) as u64);
+                }
+            }
+        }
         
         
     }

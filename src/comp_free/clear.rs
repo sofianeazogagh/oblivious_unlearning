@@ -1,6 +1,8 @@
 use bincode::de;
 use rand::{distributions::uniform::SampleBorrow, Rng, RngCore};
 use crate::comp_free::dataset::*;
+use revolut::{Context, key};
+use tfhe::shortint::parameters::PARAM_MESSAGE_4_CARRY_0;
 
 #[derive(Clone)]
 pub struct ClearRoot {
@@ -31,11 +33,12 @@ impl ClearInternalNode {
 pub struct ClearLeaf {
     pub counts: Vec<u64>,
     pub id: u64,
+    pub label: u64,
 }
 
 impl ClearLeaf {
     pub fn print(&self, n_classes: u64) {
-        print!("({:?}, {})", &self.counts[..n_classes as usize], self.id);
+        print!("({:?}, {})", &self.counts[..n_classes as usize], self.label);
     }
 }
 
@@ -93,6 +96,29 @@ impl ClearTree {
         selected_leaf
     }
 
+
+    pub fn train(&mut self, dataset: &ClearDataset) {
+        for sample in dataset.records.iter() {
+            self.update_statistic(sample);
+        }
+
+
+        // majoority voting to decide the class of each leaf
+        for leaf in self.leaves.iter_mut() {
+            leaf.counts = leaf.counts.iter().map(|count| *count as u64).collect();
+
+            let mut max_count = 0;
+            let mut max_index = 0;
+            for (i, count) in leaf.counts.iter().enumerate() {
+                if count > &max_count {
+                    max_count = *count;
+                    max_index = i;
+                }
+            }
+            leaf.label = max_index as u64;
+        }
+    }
+
     pub fn update_statistic(&mut self, sample: &ClearSample) {
         let class_index = sample.class as usize;
         let selected_leaf = self.infer(&sample);
@@ -112,6 +138,7 @@ impl ClearTree {
         for leaf in &self.leaves {
             leaf.print(self.n_classes);
         }
+
     }
 
     pub fn generate_clear_random_tree(
@@ -153,7 +180,7 @@ impl ClearTree {
 
         for i in 0..(2u64.pow(depth as u32) as usize) {
             let counts = vec![0; n_classes as usize];
-            let leaf = ClearLeaf { counts, id: 0 };
+            let leaf = ClearLeaf { counts, id: 0, label: 0 };
             tree.leaves.push(leaf);
         }
 
@@ -164,4 +191,71 @@ impl ClearTree {
 #[derive(Clone)]
 pub struct ClearForest {
     pub trees: Vec<ClearTree>,
+}
+
+impl ClearForest {
+
+    pub fn train(&mut self, dataset: &ClearDataset) {
+        for tree in self.trees.iter_mut() {
+            tree.train(dataset);
+        }
+
+        // for tree in self.trees.iter() {
+        //     tree.print();
+        // }
+    }
+
+    pub fn evaluate(&mut self, dataset: &ClearDataset) -> f64 {
+        let mut correct = 0;
+        let mut total = 0;
+        
+        for sample in dataset.records.iter() {
+            let mut counts = vec![0; self.trees[0].n_classes as usize];
+            for tree in self.trees.iter_mut() {
+                let predicted_class = tree.infer(&sample);
+                counts[predicted_class.label as usize] += 1;
+            }
+
+            let mut max_count = 0;
+            let mut max_index = 0;
+            for (i, count) in counts.iter().enumerate() {
+                if count > &max_count {
+                    max_count = *count;
+                    max_index = i;
+                }
+            }
+            if max_index as u64 == sample.class {
+                correct += 1;
+            }
+            total += 1;
+        }
+        correct as f64 / total as f64
+    }
+
+
+
+}
+    
+    
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_train_clear_forest() {
+        let filepath = "./src/comp_free/test_forest.json";
+        let ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
+        let private_key = key(ctx.parameters());
+        let public_key = &private_key.public_key;
+
+        let dataset = ClearDataset::from_file("data/iris-uci/iris.csv".to_string());
+        let (train_dataset, test_dataset) = dataset.split(0.8);
+
+        let mut forest = ClearForest::load_from_file(filepath, &ctx, &public_key);
+        forest.train(&train_dataset);
+        let accuracy = forest.evaluate(&test_dataset);
+        println!("Accuracy: {}", accuracy);
+        
+    
+
+    }
 }
