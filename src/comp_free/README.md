@@ -25,3 +25,13 @@ comp_free/
 - **forest.rs**: Defines the `Forest` structure, a collection of `Tree` objects, representing a random forest.
 - **mod.rs**: Serves as a module index, re-exporting modules and importing necessary components from external libraries.
 - **dataset.rs**: Defines structures and methods for handling datasets, including unencrypted and encrypted data, with methods for loading, splitting, and encrypting datasets.
+
+
+# Campaign 1
+
+To run the campaign, you can use the following command:
+
+```
+nohup cargo test --release -- --nocapture test_bench_best > campaign_1.log &
+```
+
