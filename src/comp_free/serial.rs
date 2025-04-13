@@ -11,6 +11,7 @@ use revolut::{Context, PrivateKey, PublicKey};
 use serde_json::{json, Value};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
+use std::path::Path;
 use std::time::Duration;
 
 impl Tree {
@@ -154,6 +155,46 @@ impl Tree {
             final_leaves,
         }
     }
+
+
+    pub fn new_from_value(json: &serde_json::Value, public_key: &PublicKey, ctx: &Context) -> Self {
+        let mut tree = Self::new(
+            json.get("depth").and_then(|d| d.as_u64()).unwrap_or(0),
+            json.get("n_classes").and_then(|c| c.as_u64()).unwrap_or(0),
+        );
+
+        tree.root.threshold = json
+            .get("root")
+            .and_then(|r| r.get("threshold").and_then(|t| t.as_u64()))
+            .unwrap_or(0);
+        tree.root.index = json
+            .get("root")
+            .and_then(|r| r.get("index").and_then(|i| i.as_u64()))
+            .unwrap_or(0);
+
+        for stage in json.get("stages").and_then(|s| s.as_array()) {
+            for node in stage {
+                tree.stages.push(
+                    node.as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|n| Node {
+                            threshold: n.get("threshold").and_then(|t| t.as_u64()).unwrap_or(0),
+                            index: n.get("index").and_then(|i| i.as_u64()).unwrap_or(0),
+                        })
+                        .collect(),
+                );
+            }
+        }
+
+        for _ in 0..tree.n_classes {
+            let class = NyblByteLUT::from_bytes_trivially(&[0x00; 16], ctx);
+            tree.leaves_lut.push(Classes { class });
+        }
+
+        tree
+    }
+
 }
 
 impl Forest {
@@ -168,6 +209,9 @@ impl Forest {
     }
 
     pub fn save_to_file(&self, filepath: &str, private_key: &PrivateKey, ctx: &Context) {
+        if !Path::new(filepath).exists() {
+            File::create(filepath).expect("Unable to create file");
+        }
         let json_data = self.to_json(private_key, ctx);
         let json_string = serde_json::to_string_pretty(&json_data).unwrap();
         let mut file = File::create(filepath).expect("Unable to create file");
@@ -192,6 +236,22 @@ impl Forest {
         Forest { trees }
     }
 
+    pub fn new_from_file(filepath: &str, public_key: &PublicKey, ctx: &Context) -> Self {
+        let file = std::fs::File::open(filepath).expect("Unable to open file");
+        let reader = std::io::BufReader::new(file);
+        let json: serde_json::Value =
+            serde_json::from_reader(reader).expect("Unable to parse JSON");
+
+        let mut trees = Vec::new();
+        for tree_json in json.get("trees").and_then(|t| t.as_array()).unwrap() {
+            let tree = Tree::new_from_value(tree_json, public_key, ctx);
+            trees.push(tree);
+        }
+
+        Self { trees }
+    }
+
+
     pub fn save_perf_to_file(
         &self,
         file_path: &str,
@@ -213,6 +273,33 @@ impl Forest {
             file,
             "{},{},{},{:?},{:?},{}",
             n_trees, depth, dataset_name, duration_train, duration_test, accuracy
+        )
+        .unwrap();
+    }
+
+
+    pub fn save_perf_for_bench(
+        &self,
+        file_path: &str,
+        duration_train: Duration,
+        duration_test: Duration,
+        dataset_name: &str,
+        n_trees: u64,
+        depth: u64,
+        accuracy: f64,
+        best_accuracy: f64,
+    ) {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .create(true)
+            .open(file_path)
+            .unwrap();
+
+        writeln!(
+            file,
+            "{},{},{},{:?},{:?},{},{}",
+            n_trees, depth, dataset_name, duration_train, duration_test, accuracy, best_accuracy
         )
         .unwrap();
     }
@@ -452,5 +539,38 @@ mod tests {
         }
         
         
+    }
+
+
+
+    #[test]
+    fn test_new_forest_from_file() {
+        let filepath = "./src/comp_free/best_iris.csv_64_4.json";
+        let ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
+        let private_key = key(ctx.parameters());
+        let public_key = &private_key.public_key;
+
+        let forest = Forest::new_from_file(filepath, public_key, &ctx);
+
+        assert_eq!(forest.trees.len(), 64); 
+
+        for tree in forest.trees.iter() {
+            assert_eq!(tree.depth, 4); 
+            assert_eq!(tree.n_classes, 3); 
+
+            for stage in tree.stages.iter() {
+                for node in stage.iter() {
+                    println!("node.threshold: {:?}", node.threshold);
+                    assert!(node.threshold >= 0);
+                    println!("node.index: {:?}", node.index);
+                    assert!(node.index >= 0);
+                }
+            }
+
+            for class in tree.leaves_lut.iter() {
+                let bytes = class.class.to_bytes(&public_key, &private_key, &ctx);
+                assert_eq!(bytes.len(), 16); 
+            }
+        }
     }
 }

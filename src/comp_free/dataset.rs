@@ -37,7 +37,10 @@ pub struct ClearDataset {
 
 impl ClearDataset {
     pub fn from_file(filepath: String) -> Self {
-        let mut rdr = csv::ReaderBuilder::new().has_headers(false).from_path(filepath).unwrap();
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .from_path(filepath)
+            .unwrap();
         let mut records = Vec::new();
         let mut n = 0;
 

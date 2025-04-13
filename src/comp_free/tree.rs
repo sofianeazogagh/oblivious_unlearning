@@ -89,18 +89,6 @@ impl Tree {
             tree.stages.push(stage);
         }
 
-        // Initialize the leaves to 0
-        // let num_leaves = 2u64.pow(depth as u32);
-        // for _ in 0..num_leaves {
-        //     let leaf = Leaf {
-        //         classes: vec![
-        //             ByteLWE::from_byte_trivially(0x00, ctx, public_key);
-        //             n_classes as usize
-        //         ],
-        //     };
-        //     tree.leaves.push(leaf);
-        // }
-
         // Option 2 : The leaf are horizontally packed into a NyblByteLUT (one per class)
         let num_classes = tree.n_classes;
         for _ in 0..num_classes {

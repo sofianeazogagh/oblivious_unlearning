@@ -1,7 +1,7 @@
+use crate::comp_free::dataset::*;
 use bincode::de;
 use rand::{distributions::uniform::SampleBorrow, Rng, RngCore};
-use crate::comp_free::dataset::*;
-use revolut::{Context, key};
+use revolut::{key, Context};
 use tfhe::shortint::parameters::PARAM_MESSAGE_4_CARRY_0;
 
 #[derive(Clone)]
@@ -98,12 +98,10 @@ impl ClearTree {
         selected_leaf
     }
 
-
     pub fn train(&mut self, dataset: &ClearDataset) {
         for sample in dataset.records.iter() {
             self.update_statistic(sample);
         }
-
 
         // majoority voting to decide the class of each leaf
         for leaf in self.leaves.iter_mut() {
@@ -117,7 +115,8 @@ impl ClearTree {
                     max_index = i;
                 }
             }
-            leaf.label = max_index as u64;        }
+            leaf.label = max_index as u64;
+        }
     }
 
     pub fn update_statistic(&mut self, sample: &ClearSample) {
@@ -139,7 +138,6 @@ impl ClearTree {
         for leaf in &self.leaves {
             leaf.print(self.n_classes);
         }
-
     }
 
     pub fn generate_clear_random_tree(
@@ -179,7 +177,11 @@ impl ClearTree {
 
         for i in 0..(2u64.pow(depth as u32) as usize) {
             let counts = vec![0; n_classes as usize];
-            let leaf = ClearLeaf { counts, id: 0, label: 0 };
+            let leaf = ClearLeaf {
+                counts,
+                id: 0,
+                label: 0,
+            };
             tree.leaves.push(leaf);
         }
 
@@ -193,7 +195,6 @@ pub struct ClearForest {
 }
 
 impl ClearForest {
-
     pub fn new_random_forest(
         n_trees: u64,
         depth: u64,
@@ -216,13 +217,12 @@ impl ClearForest {
             tree.train(dataset);
             tree.final_leaves = tree.leaves.iter().map(|leaf| leaf.label).collect();
         }
-
     }
 
     pub fn evaluate(&mut self, dataset: &ClearDataset) -> f64 {
         let mut correct = 0;
         let mut total = 0;
-        
+
         for sample in dataset.records.iter() {
             let mut counts = vec![0; self.trees[0].n_classes as usize];
             for tree in self.trees.iter_mut() {
@@ -245,12 +245,8 @@ impl ClearForest {
         }
         correct as f64 / total as f64
     }
-
-
-
 }
-    
-    
+
 mod tests {
     use super::*;
 
@@ -268,34 +264,39 @@ mod tests {
         forest.train(&train_dataset);
         let accuracy = forest.evaluate(&test_dataset);
         println!("Accuracy: {}", accuracy);
-    
     }
 
     #[test]
     fn find_best_model() {
-
-
-        let dataset_path = "data/iris-uci/iris.csv";
-        let dataset_name = dataset_path.split("/").last().unwrap();
+        let dataset_name = "iris";
+        // let dataset_name = "adult";
+        let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
         let ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
         let private_key = key(ctx.parameters());
         let public_key = &private_key.public_key;
 
         let num_trees = 64;
         let depth = 4;
-        let n_classes = 3;
         let max_features = 2048;
-        let f = 4;
+        let mut n_classes = 3;
+        let mut f = 4;
+
+        if dataset_name == "adult" {
+            n_classes = 2;
+            f = 105;
+        }
 
         let dataset = ClearDataset::from_file(dataset_path.to_string());
         let (train_dataset, test_dataset) = dataset.split(0.8);
 
         let num_trials = 100;
         let mut best_accuracy = 0.0;
-        let mut best_model = ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
+        let mut best_model =
+            ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
 
         for _ in 0..num_trials {
-            let mut forest = ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
+            let mut forest =
+                ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
             forest.train(&train_dataset);
             let accuracy = forest.evaluate(&test_dataset);
             if accuracy > best_accuracy {
@@ -304,12 +305,14 @@ mod tests {
             }
         }
 
-        let filepath = format!("./src/comp_free/best_{}_{}_{}.json", dataset_name, num_trees, depth);
+        let filepath = format!(
+            "./src/comp_free/best_{}_{}_{}_{:.2}.json",
+            dataset_name, num_trees, depth, best_accuracy
+        );
 
         best_model.save_to_file(&filepath);
 
         println!("Best accuracy: {}", best_accuracy);
         println!("Best model saved to: {}", filepath);
     }
-
 }
