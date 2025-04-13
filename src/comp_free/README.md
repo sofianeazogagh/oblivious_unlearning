@@ -27,7 +27,13 @@ comp_free/
 - **dataset.rs**: Defines structures and methods for handling datasets, including unencrypted and encrypted data, with methods for loading, splitting, and encrypting datasets.
 
 
-# Campaign 1
+# Campaign
+
+Campaign 3 : Iris dataset
+
+Campaign 4 : Adult dataset
+
+Campaign 5 : Wine dataset
 
 To run the campaign, you can use the following command:
 

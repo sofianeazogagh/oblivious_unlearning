@@ -25,7 +25,7 @@ const PRE_SEEDED: bool = false;
 const EXPORT: bool = true;
 const NUM_THREADS: usize = 4;
 
-const FOLDER: &str = "./src/comp_free/campaign_3";
+const FOLDER: &str = "./src/comp_free/campaign_5";
 
 impl Forest {
     pub fn new(
@@ -371,23 +371,33 @@ mod tests {
         let private_key = key(ctx.parameters());
         let public_key = &private_key.public_key;
 
+        if !std::path::Path::new(FOLDER).exists() {
+            std::fs::create_dir_all(FOLDER).unwrap();
+        }
+
         let num_trials = 10;
         for i in 0..num_trials {
             let dataset_name = "iris";
             // let dataset_name = "adult";
-            // let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
-            let dataset_path = format!("data/{}-uci/{}-sample.csv", dataset_name, dataset_name);
+            let dataset_name = "wine";
+            let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
 
-            // let num_trees = 64;
-            let num_trees = 1;
+            let num_trees = 64;
             let depth = 4;
             let max_features = 2048;
+
+            // Base case for iris
             let mut n_classes = 3;
             let mut f = 4;
 
             if dataset_name == "adult" {
                 n_classes = 2;
                 f = 105;
+            }
+
+            if dataset_name == "wine" {
+                n_classes = 3;
+                f = 13;
             }
 
             let dataset = ClearDataset::from_file(dataset_path.to_string());
@@ -409,6 +419,8 @@ mod tests {
                     best_model = forest;
                 }
             }
+
+            println!("Best accuracy: {:?}", best_accuracy);
 
             let filepath_clear_forest = format!(
                 "{}/best_{}_{}_{}_{:.2}.json",
