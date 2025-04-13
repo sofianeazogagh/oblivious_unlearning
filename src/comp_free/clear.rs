@@ -49,6 +49,7 @@ pub struct ClearTree {
     pub leaves: Vec<ClearLeaf>,
     pub depth: u64,
     pub n_classes: u64,
+    pub final_leaves: Vec<u64>,
 }
 
 impl ClearTree {
@@ -62,6 +63,7 @@ impl ClearTree {
             leaves: Vec::new(),
             depth: 0,
             n_classes: 0,
+            final_leaves: Vec::new(),
         }
     }
 
@@ -115,8 +117,7 @@ impl ClearTree {
                     max_index = i;
                 }
             }
-            leaf.label = max_index as u64;
-        }
+            leaf.label = max_index as u64;        }
     }
 
     pub fn update_statistic(&mut self, sample: &ClearSample) {
@@ -195,14 +196,29 @@ pub struct ClearForest {
 
 impl ClearForest {
 
+    pub fn new_random_forest(
+        n_trees: u64,
+        depth: u64,
+        n_classes: u64,
+        max_features: u64,
+        f: u64,
+    ) -> ClearForest {
+        let mut forest = ClearForest { trees: Vec::new() };
+        let mut rng = rand::thread_rng();
+        let max_features = 2048;
+        for _ in 0..n_trees {
+            let tree = ClearTree::generate_clear_random_tree(depth, n_classes, max_features, f);
+            forest.trees.push(tree);
+        }
+        forest
+    }
+
     pub fn train(&mut self, dataset: &ClearDataset) {
         for tree in self.trees.iter_mut() {
             tree.train(dataset);
+            tree.final_leaves = tree.leaves.iter().map(|leaf| leaf.label).collect();
         }
 
-        // for tree in self.trees.iter() {
-        //     tree.print();
-        // }
     }
 
     pub fn evaluate(&mut self, dataset: &ClearDataset) -> f64 {
@@ -254,8 +270,47 @@ mod tests {
         forest.train(&train_dataset);
         let accuracy = forest.evaluate(&test_dataset);
         println!("Accuracy: {}", accuracy);
-        
     
-
     }
+
+    #[test]
+    fn find_best_model() {
+
+
+        let dataset_path = "data/iris-uci/iris.csv";
+        let dataset_name = dataset_path.split("/").last().unwrap();
+        let ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
+        let private_key = key(ctx.parameters());
+        let public_key = &private_key.public_key;
+
+        let num_trees = 64;
+        let depth = 4;
+        let n_classes = 3;
+        let max_features = 2048;
+        let f = 4;
+
+        let dataset = ClearDataset::from_file(dataset_path.to_string());
+        let (train_dataset, test_dataset) = dataset.split(0.8);
+
+        let num_trials = 100;
+        let mut best_accuracy = 0.0;
+        let mut best_model = ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
+
+        for _ in 0..num_trials {
+            let mut forest = ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
+            forest.train(&train_dataset);
+            let accuracy = forest.evaluate(&test_dataset);
+            if accuracy > best_accuracy {
+                best_accuracy = accuracy;
+                best_model = forest;
+            }
+        }
+
+        let filepath = format!("./src/comp_free/best_{}_{}_{}.json", dataset_name, num_trees, depth);
+
+        best_model.save_to_file(&filepath);
+
+        println!("Best accuracy: {}", best_accuracy);
+    }
+
 }

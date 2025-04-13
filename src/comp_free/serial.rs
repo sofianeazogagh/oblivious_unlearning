@@ -271,13 +271,52 @@ impl ClearTree {
             })
             .collect();
 
+        let final_leaves: Vec<u64> = json_data["final_leaves"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c.as_u64().unwrap())
+            .collect();
+
         ClearTree {
             root,
             nodes,
             leaves,
             depth: json_data["depth"].as_u64().unwrap(),
             n_classes: json_data["n_classes"].as_u64().unwrap(),
+            final_leaves,
         }
+    }
+
+    pub fn to_json(&self) -> Value {
+        let root = json!({
+            "threshold": self.root.threshold,
+            "index": self.root.feature_index,
+        });
+
+        let stages: Vec<Value> = self.nodes.iter().map(|stage| {
+            stage.iter().map(|node| {
+                json!({
+                    "threshold": node.threshold,
+                    "index": node.feature_index,
+                })
+            })
+            .collect()
+        }).collect();
+
+        let leaves: Vec<Value> = self.leaves.iter().map(|leaf| {
+            let classes: Vec<u64> = leaf.counts.clone();
+            json!({ "classes": classes })
+        }).collect();
+
+            
+        json!({ "root": root, 
+                "stages": stages, 
+                "leaves": leaves,
+                "depth": self.depth,
+                "n_classes": self.n_classes,
+                "final_leaves": self.final_leaves,
+        })
     }
 }
 
@@ -297,6 +336,20 @@ impl ClearForest {
             .collect();
 
         ClearForest { trees }
+    }
+
+    pub fn to_json(&self) -> Value {
+        let trees: Vec<Value> = self.trees.iter().map(|tree| tree.to_json()).collect();
+        json!({ "trees": trees })
+    }
+
+    pub fn save_to_file(&self, filepath: &str) {
+        let json_data = self.to_json();
+        let json_string = serde_json::to_string_pretty(&json_data).unwrap();
+        println!("Filepath: {}", filepath);
+        let mut file = File::create(filepath).expect("Unable to create file");
+        file.write_all(json_string.as_bytes())
+            .expect("Unable to write data");
     }
 }
 
@@ -412,7 +465,9 @@ mod tests {
 
             for k in 0.. clear_forest.trees[i].leaves.len() {
                 for l in 0.. clear_forest.trees[i].leaves[k].counts.len() {
-                    assert_eq!(clear_forest.trees[i].leaves[k].counts[l], forest.trees[i].leaves[k].classes[l].to_byte(&ctx, &private_key) as u64);
+                    assert_eq!(clear_forest.trees[i].leaves[k].counts[l], forest.trees[i].leaves_lut[l].class
+                        .at(k as u8, &ctx, &public_key)
+                        .to_byte(&ctx, &private_key) as u64);
                 }
             }
         }
