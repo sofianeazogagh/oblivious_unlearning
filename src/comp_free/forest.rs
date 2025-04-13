@@ -45,20 +45,27 @@ impl Forest {
     pub fn train(&mut self, dataset: &EncryptedDataset, public_key: &PublicKey, ctx: &Context) {
         println!("Dataset size: {}", dataset.records.len());
         let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(1)
+            .num_threads(NUM_THREADS)
             .build()
             .unwrap();
+
+        let start = Instant::now();
         pool.install(|| {
             self.trees.par_iter_mut().for_each(|tree| {
                 tree.train(dataset, public_key, ctx);
             });
         });
+        let duration = start.elapsed();
+        println!("[TIME] Total forest train: {:?}", duration);
 
+        let start = Instant::now();
         pool.install(|| {
             self.trees.par_iter_mut().for_each(|tree| {
                 tree.leaves_majority(public_key, ctx);
             });
         });
+        let duration = start.elapsed();
+        println!("[TIME] Total forest majority: {:?}", duration);
     }
 
     pub fn test(&self, sample_features: &Vec<RLWE>, public_key: &PublicKey, ctx: &Context) -> LWE {
@@ -71,6 +78,17 @@ impl Forest {
     pub fn print(&self, private_key: &PrivateKey, ctx: &Context) {
         for tree in self.trees.iter() {
             tree.print_tree(private_key, ctx);
+            // print the final leaves
+            println!("Final leaves: [");
+            for (i, leaf) in tree.final_leaves.iter().enumerate() {
+                // More fancy print
+                if i == tree.final_leaves.len() - 1 {
+                    print!("{}", private_key.decrypt_lwe(leaf, ctx));
+                } else {
+                    print!("{},", private_key.decrypt_lwe(leaf, ctx));
+                }
+            }
+            println!("]");
         }
     }
 }
@@ -104,7 +122,7 @@ mod tests {
             forest.save_to_file(filepath, &private_key, &ctx);
         }
 
-        // forest.print(&private_key, &ctx);
+        forest.print(&private_key, &ctx);
     }
 
     #[test]
@@ -146,6 +164,8 @@ mod tests {
         //     &ctx,
         //     &public_key,
         // );
+
+        forest.print(&private_key, &ctx);
 
         let sample_features = dataset.records[0].features.clone();
         let sample_class = dataset.records[0].class.clone();

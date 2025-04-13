@@ -2,15 +2,16 @@
 
 use crate::comp_free::clear::*;
 use crate::comp_free::forest::Forest;
-use crate::comp_free::tree::{Leaf, Node, Tree};
-use crate::radix::ByteLWE;
+use crate::comp_free::tree::{Classes, Node, Tree};
+use crate::ByteLWE;
+use crate::LWE;
+use crate::PARAM_MESSAGE_4_CARRY_0;
+use revolut::radix::NyblByteLUT;
 use revolut::{Context, PrivateKey, PublicKey};
 use serde_json::{json, Value};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::time::Duration;
-use crate::LWE;
-use crate::PARAM_MESSAGE_4_CARRY_0;
 
 impl Tree {
     pub fn to_json(&self, private_key: &PrivateKey, ctx: &Context) -> Value {
@@ -35,18 +36,42 @@ impl Tree {
             })
             .collect();
 
-        let leaves: Vec<Value> = self
-            .leaves
+        // Unpack de LUTs into the Vec of Vec<ByteLWE> : one per class
+        let mut classes = Vec::new();
+        for i in 0..self.n_classes {
+            classes.push(
+                self.leaves_lut[i as usize]
+                    .class
+                    .to_many_blwes(&private_key.public_key, ctx),
+            );
+        }
+        // Push the classes into the leaves : n_classes per leaf
+        let mut leaves: Vec<Vec<ByteLWE>> = Vec::new();
+        for j in 0..2u64.pow(self.depth as u32) as usize {
+            let mut leaf = Vec::new();
+            for i in 0..self.n_classes {
+                leaf.push(classes[i as usize][j as usize].clone());
+            }
+            leaves.push(leaf);
+        }
+
+        let leaves: Vec<Value> = leaves
             .iter()
             .map(|leaf| {
-                let classes: Vec<u8> = leaf
-                    .classes
-                    .iter()
-                    .map(|c| c.to_byte(ctx, private_key))
-                    .collect();
+                let classes: Vec<u8> = leaf.iter().map(|c| c.to_byte(ctx, private_key)).collect();
                 json!({ "classes": classes })
             })
             .collect();
+
+        // let leaves_lut: Vec<Value> = self
+        //     .leaves_lut
+        //     .iter()
+        //     .map(|leaf| {
+        //         json!({
+        //             "classes": leaf.class.to_bytes(&private_key.public_key, private_key, ctx)
+        //         })
+        //     })
+        //     .collect();
 
         let final_leaves: Vec<u64> = self
             .final_leaves
@@ -65,6 +90,8 @@ impl Tree {
     }
 
     pub fn from_json(json: &Value, ctx: &Context, public_key: &PublicKey) -> Self {
+        let n_classes = json["n_classes"].as_u64().unwrap();
+        let depth = json["depth"].as_u64().unwrap();
         let root = Node {
             threshold: json["root"]["threshold"].as_u64().unwrap(),
             index: json["root"]["index"].as_u64().unwrap(),
@@ -87,22 +114,39 @@ impl Tree {
             })
             .collect();
 
-        let leaves: Vec<Leaf> = json["leaves"]
+        let leaves: Vec<Vec<u8>> = json["leaves"]
             .as_array()
             .unwrap()
             .iter()
             .map(|leaf| {
-                let classes: Vec<ByteLWE> = leaf["classes"]
+                let classes: Vec<u8> = leaf["classes"]
                     .as_array()
                     .unwrap()
                     .iter()
                     .map(|c| {
-                        ByteLWE::from_byte_trivially(c.as_u64().unwrap() as u8, ctx, public_key)
+                        // ByteLWE::from_byte_trivially(c.as_u64().unwrap() as u8, ctx, public_key)
+                        c.as_u64().unwrap() as u8
                     })
                     .collect();
-                Leaf { classes }
+                classes
             })
             .collect();
+
+        // Pack the classes into the leaves : one per class
+        let mut leaves_lut = Vec::new();
+        for i in 0..n_classes {
+            let mut class = Vec::new();
+            for j in 0..2u64.pow(depth as u32) as usize {
+                class.push(leaves[j as usize][i as usize]);
+            }
+            let mut class_slice = [0u8; 16];
+            for (k, &value) in class.iter().enumerate() {
+                class_slice[k] = value;
+            }
+            leaves_lut.push(Classes {
+                class: NyblByteLUT::from_bytes_trivially(&class_slice, ctx),
+            });
+        }
 
         let final_leaves: Vec<LWE> = json["final_leaves"]
             .as_array()
@@ -114,9 +158,9 @@ impl Tree {
         Tree {
             root,
             stages,
-            leaves,
-            depth: json["depth"].as_u64().unwrap(),
-            n_classes: json["n_classes"].as_u64().unwrap(),
+            leaves_lut,
+            depth,
+            n_classes,
             final_leaves,
         }
     }
@@ -197,7 +241,7 @@ impl ClearTree {
                     .as_array()
                     .unwrap()
                     .iter()
-                    .enumerate()    
+                    .enumerate()
                     .map(|(i, node)| ClearInternalNode {
                         threshold: node["threshold"].as_u64().unwrap(),
                         feature_index: node["index"].as_u64().unwrap(),
@@ -283,7 +327,7 @@ mod tests {
         let forest = Forest::new(n_trees, depth, n_classes, f, &public_key, &ctx);
 
         // Define a file path for saving the forest
-        let filepath = "./src/comp_free/test_forest.json";
+        let filepath = "./src/comp_free/test_forest_serial.json";
 
         // Save the forest to a file
         println!("Saving forest to file");
@@ -314,17 +358,29 @@ mod tests {
                 }
             }
 
-            for (original_leaf, loaded_leaf) in
-                original_tree.leaves.iter().zip(loaded_tree.leaves.iter())
+            // for (original_leaf, loaded_leaf) in
+            //     original_tree.leaves.iter().zip(loaded_tree.leaves.iter())
+            // {
+            //     for (original_class, loaded_class) in
+            //         original_leaf.classes.iter().zip(loaded_leaf.classes.iter())
+            //     {
+            //         assert_eq!(
+            //             original_class.to_byte(&ctx, &private_key),
+            //             loaded_class.to_byte(&ctx, &private_key)
+            //         );
+            //     }
+            // }
+            for (original_leaf, loaded_leaf) in original_tree
+                .leaves_lut
+                .iter()
+                .zip(loaded_tree.leaves_lut.iter())
             {
-                for (original_class, loaded_class) in
-                    original_leaf.classes.iter().zip(loaded_leaf.classes.iter())
-                {
-                    assert_eq!(
-                        original_class.to_byte(&ctx, &private_key),
-                        loaded_class.to_byte(&ctx, &private_key)
-                    );
-                }
+                assert_eq!(
+                    original_leaf
+                        .class
+                        .to_bytes(&public_key, &private_key, &ctx),
+                    loaded_leaf.class.to_bytes(&public_key, &private_key, &ctx)
+                );
             }
         }
     }
