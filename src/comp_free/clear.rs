@@ -204,7 +204,6 @@ impl ClearForest {
     ) -> ClearForest {
         let mut forest = ClearForest { trees: Vec::new() };
         let mut rng = rand::thread_rng();
-        let max_features = 2048;
         for _ in 0..n_trees {
             let tree = ClearTree::generate_clear_random_tree(depth, n_classes, max_features, f);
             forest.trees.push(tree);
@@ -268,16 +267,20 @@ mod tests {
 
     #[test]
     fn find_best_model() {
-        let dataset_name = "iris";
+        // let dataset_name = "iris";
+        let dataset_name = "wine";
         // let dataset_name = "adult";
         let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
         let ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
         let private_key = key(ctx.parameters());
         let public_key = &private_key.public_key;
 
+        let dataset = ClearDataset::from_file(dataset_path.to_string());
+        let (train_dataset, test_dataset) = dataset.split(0.8);
+
         let num_trees = 64;
         let depth = 4;
-        let max_features = 2048;
+        let max_features = dataset.max_features;
         let mut n_classes = 3;
         let mut f = 4;
 
@@ -286,8 +289,10 @@ mod tests {
             f = 105;
         }
 
-        let dataset = ClearDataset::from_file(dataset_path.to_string());
-        let (train_dataset, test_dataset) = dataset.split(0.8);
+        if dataset_name == "wine" {
+            n_classes = 3;
+            f = 13;
+        }
 
         let num_trials = 100;
         let mut best_accuracy = 0.0;
@@ -313,6 +318,6 @@ mod tests {
         best_model.save_to_file(&filepath);
 
         println!("Best accuracy: {}", best_accuracy);
-        println!("Best model saved to: {}", filepath);
+        // println!("Best model saved to: {}", filepath);
     }
 }
