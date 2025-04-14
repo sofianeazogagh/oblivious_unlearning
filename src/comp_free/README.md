@@ -35,6 +35,8 @@ Campaign 4 : Adult dataset
 
 Campaign 5 : Wine dataset
 
+Campaign 6 : Cancer dataset
+
 To run the campaign, you can use the following command:
 
 ```

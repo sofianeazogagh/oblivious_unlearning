@@ -25,7 +25,7 @@ const PRE_SEEDED: bool = false;
 const EXPORT: bool = true;
 const NUM_THREADS: usize = 1;
 
-const FOLDER: &str = "./src/comp_free/campaign_6";
+const FOLDER: &str = "./src/comp_free/campaign_5";
 
 impl Forest {
     pub fn new(
@@ -379,17 +379,19 @@ mod tests {
         for i in 0..num_trials {
             let dataset_name = "iris";
             // let dataset_name = "adult";
-            // let dataset_name = "wine";
-            let dataset_name = "cancer";
+            let dataset_name = "wine";
+            // let dataset_name = "cancer";
             let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
 
-            let num_trees = 64;
-            let depth = 4;
-            let max_features = 2048;
+            // Dataset
+            let dataset = ClearDataset::from_file(dataset_path.to_string());
 
-            // Base case for iris
+            let (train_dataset_clear, test_dataset_clear) = dataset.split(0.8);
+
+            // Base case is for iris
             let mut n_classes = 3;
             let mut f = 4;
+            let max_features = dataset.max_features;
 
             if dataset_name == "adult" {
                 n_classes = 2;
@@ -406,8 +408,9 @@ mod tests {
                 f = 30;
             }
 
-            let dataset = ClearDataset::from_file(dataset_path.to_string());
-            let (train_dataset_clear, test_dataset_clear) = dataset.split(0.8);
+            let num_trees = 64;
+            let depth = 4;
+            // let max_features = 2048;
 
             // FIND BEST MODEL
             let num_trials = 100;
@@ -489,9 +492,9 @@ mod tests {
                 &format!("{}/perf.csv", FOLDER),
                 duration_train,
                 average_duration_test,
-                "iris",
-                64,
-                4,
+                dataset_name,
+                num_trees,
+                depth,
                 accuracy,
                 best_accuracy,
             );
