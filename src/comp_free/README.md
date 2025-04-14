@@ -38,6 +38,6 @@ Campaign 5 : Wine dataset
 To run the campaign, you can use the following command:
 
 ```
-nohup cargo test --release -- --nocapture test_bench_best > campaign_3.log &
+nohup cargo test --release -- --nocapture test_bench_best > /home/sofiane/Bureau/PROBONITE/src/comp_free/campaign_6/campaign_6.log &
 ```
 

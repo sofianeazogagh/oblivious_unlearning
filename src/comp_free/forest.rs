@@ -23,9 +23,9 @@ pub struct Forest {
 const SEED: u64 = 1;
 const PRE_SEEDED: bool = false;
 const EXPORT: bool = true;
-const NUM_THREADS: usize = 4;
+const NUM_THREADS: usize = 1;
 
-const FOLDER: &str = "./src/comp_free/campaign_5";
+const FOLDER: &str = "./src/comp_free/campaign_6";
 
 impl Forest {
     pub fn new(
@@ -379,7 +379,8 @@ mod tests {
         for i in 0..num_trials {
             let dataset_name = "iris";
             // let dataset_name = "adult";
-            let dataset_name = "wine";
+            // let dataset_name = "wine";
+            let dataset_name = "cancer";
             let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
 
             let num_trees = 64;
@@ -398,6 +399,11 @@ mod tests {
             if dataset_name == "wine" {
                 n_classes = 3;
                 f = 13;
+            }
+
+            if dataset_name == "cancer" {
+                n_classes = 2;
+                f = 30;
             }
 
             let dataset = ClearDataset::from_file(dataset_path.to_string());
