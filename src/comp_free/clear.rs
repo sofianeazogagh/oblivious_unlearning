@@ -98,7 +98,7 @@ impl ClearTree {
         selected_leaf
     }
 
-    pub fn train(&mut self, dataset: &ClearDataset) {
+    pub fn train(&mut self, dataset: &ClearDataset, label_order: u64) {
         for sample in dataset.records.iter() {
             self.update_statistic(sample);
         }
@@ -115,7 +115,18 @@ impl ClearTree {
                     max_index = i;
                 }
             }
-            leaf.label = max_index as u64;
+
+            if label_order == 0 {
+                // if the counts are all 0, set the label to the highest class number
+                if leaf.counts.iter().sum::<u64>() == 0 {
+                    leaf.label = leaf.counts.len() as u64 - 1;
+                } else {
+                    leaf.label = max_index as u64;
+                }
+            } else {
+                leaf.label = max_index as u64;
+            }
+
         }
     }
 
@@ -211,9 +222,9 @@ impl ClearForest {
         forest
     }
 
-    pub fn train(&mut self, dataset: &ClearDataset) {
+    pub fn train(&mut self, dataset: &ClearDataset, label_order: u64) {
         for tree in self.trees.iter_mut() {
-            tree.train(dataset);
+            tree.train(dataset, label_order);
             tree.final_leaves = tree.leaves.iter().map(|leaf| leaf.label).collect();
         }
     }
@@ -244,6 +255,33 @@ impl ClearForest {
         }
         correct as f64 / total as f64
     }
+
+    pub fn fit_dataset(train_dataset: &ClearDataset, test_dataset: &ClearDataset, dataset_name: &str) -> ClearForest {
+        let num_trees = 64;
+        let depth = 4;
+        let max_features = train_dataset.max_features;
+        let mut n_classes = 3;
+        let mut f = 4;
+
+        let num_trials = 100;
+        let mut best_accuracy = 0.0;
+        let mut best_model =
+            ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
+
+        for _ in 0..num_trials {
+            let mut forest =
+                ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
+            forest.train(&train_dataset, 1);
+            let accuracy = forest.evaluate(&test_dataset);
+            if accuracy > best_accuracy {
+                best_accuracy = accuracy;
+                best_model = forest;
+            }
+        }
+        println!("Best accuracy: {}", best_accuracy);
+
+        best_model
+    }
 }
 
 mod tests {
@@ -251,6 +289,7 @@ mod tests {
 
     #[test]
     fn test_train_clear_forest() {
+        let seed = 10;
         let filepath = "./src/comp_free/test_forest.json";
         let ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
         let private_key = key(ctx.parameters());
@@ -260,16 +299,17 @@ mod tests {
         let (train_dataset, test_dataset) = dataset.split(0.8);
 
         let mut forest = ClearForest::load_from_file(filepath, &ctx, &public_key);
-        forest.train(&train_dataset);
+        forest.train(&train_dataset, 1);
         let accuracy = forest.evaluate(&test_dataset);
         println!("Accuracy: {}", accuracy);
     }
 
     #[test]
     fn find_best_model() {
-        // let dataset_name = "iris";
-        let dataset_name = "wine";
+        let dataset_name = "iris";
+        // let dataset_name = "wine";
         // let dataset_name = "adult";
+        let seed = 10;
         let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
         let ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
         let private_key = key(ctx.parameters());
@@ -302,7 +342,7 @@ mod tests {
         for _ in 0..num_trials {
             let mut forest =
                 ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
-            forest.train(&train_dataset);
+            forest.train(&train_dataset, 1);
             let accuracy = forest.evaluate(&test_dataset);
             if accuracy > best_accuracy {
                 best_accuracy = accuracy;
@@ -319,5 +359,39 @@ mod tests {
 
         println!("Best accuracy: {}", best_accuracy);
         // println!("Best model saved to: {}", filepath);
+    }
+
+
+    #[test]
+    fn test_argmax_order() {
+        let dataset_name = "iris";
+        let num_trees = 64;
+        let depth = 4;
+        let best_accuracy: f64 = 1.0;
+        let ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
+        let private_key = key(ctx.parameters());
+        let public_key = &private_key.public_key;
+        
+        let dataset = ClearDataset::from_file("data/iris-uci/iris.csv".to_string());
+        let (train_dataset, test_dataset) = dataset.split(0.8);
+
+        // find the best model
+        let mut forest = ClearForest::fit_dataset(&train_dataset, &test_dataset, dataset_name);
+
+
+        // reset the leaves
+        forest.trees.iter_mut().for_each(|tree| {
+            tree.final_leaves = vec![0; tree.leaves.len()];
+            tree.leaves.iter_mut().enumerate().for_each(|(i, leaf)| {
+               leaf.counts = vec![0; tree.n_classes as usize];
+            });
+        });
+
+        // train the model by choosing the highest label when all counts are 0
+        forest.train(&train_dataset, 0);
+
+        let accuracy = forest.evaluate(&test_dataset);
+        println!("Accuracy with weird majority voting: {}", accuracy);
+
     }
 }

@@ -7,6 +7,8 @@ use tfhe::{
     core_crypto::prelude::{GlweCiphertext, LweCiphertext},
     shortint::parameters::*,
 };
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 
 use super::*;
 
@@ -97,7 +99,7 @@ impl ClearDataset {
             if !train_indices.contains(&idx) {
                 train_indices.push(idx);
             }
-        }
+        }  
 
         for i in 0..n {
             if !train_indices.contains(&i) {

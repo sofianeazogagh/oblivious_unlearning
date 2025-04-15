@@ -421,7 +421,7 @@ mod tests {
             for _ in 0..num_trials {
                 let mut forest =
                     ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
-                forest.train(&train_dataset_clear);
+                forest.train(&train_dataset_clear, 1);
                 let accuracy = forest.evaluate(&test_dataset_clear);
                 if accuracy > best_accuracy {
                     best_accuracy = accuracy;
