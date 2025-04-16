@@ -232,13 +232,16 @@ impl ClearForest {
         let mut correct = 0;
         let mut total = 0;
 
-        for sample in dataset.records.iter() {
+        for (i, sample) in dataset.records.iter().enumerate() {
             let mut counts = vec![0; self.trees[0].n_classes as usize];
             for tree in self.trees.iter_mut() {
                 let predicted_class = tree.infer(&sample);
                 counts[predicted_class.label as usize] += 1;
             }
 
+            println!("[CLEAR] Counts for sample {}: {:?}", i, counts);
+
+            // Argmax de counts
             let mut max_count = 0;
             let mut max_index = 0;
             for (i, count) in counts.iter().enumerate() {

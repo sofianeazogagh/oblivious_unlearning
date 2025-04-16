@@ -5,6 +5,9 @@ pub mod forest;
 pub mod serial;
 pub mod tree;
 
+use std::time::Instant;
+
+use revolut::key;
 use revolut::radix::{ByteByteLUT, NyblByteLUT};
 // use revolut::{key, Context, PublicKey};
 // REVOLUT
@@ -18,35 +21,52 @@ use tfhe::shortint::parameters::*;
 type RLWE = GlweCiphertext<Vec<u64>>;
 
 trait Majority {
-    fn blind_count_extra(&self, lwes: &[LWE], ctx: &Context) -> Vec<ByteLWE>;
-    fn blind_majority_extra(&self, lwes: &[LWE], ctx: &Context) -> LWE;
+    fn blind_count_extra(&self, lwes: &[LWE], ctx: &Context, n_classes: u64) -> Vec<ByteLWE>;
+    fn blind_majority_extra(&self, lwes: &[LWE], ctx: &Context, n_classes: u64) -> LWE;
+    fn blind_majority_extra_index(
+        &self,
+        lwes: &[LWE],
+        ctx: &Context,
+        n_classes: u64,
+        i: u64,
+    ) -> LWE;
 }
 
 impl Majority for PublicKey {
     /// Count the number of occurences of more than p LWEs
-    fn blind_count_extra(&self, lwes: &[LWE], ctx: &Context) -> Vec<ByteLWE> {
+    fn blind_count_extra(&self, lwes: &[LWE], ctx: &Context, n_classes: u64) -> Vec<ByteLWE> {
         let mut count = NyblByteLUT::from_bytes_trivially(&[0u8; 16], ctx);
+        let private_key = key(ctx.parameters());
 
-        // Make chunks of size p
-        let mut chunks = Vec::new();
-        let chunk_size = ctx.full_message_modulus() as usize;
-        for lwe_chunk in lwes.chunks(chunk_size) {
-            chunks.push(lwe_chunk.to_vec());
+        for lwe in lwes {
+            count.blind_array_inc(&lwe, ctx, self);
         }
-
-        for (i, chunk) in chunks.iter().enumerate() {
-            let lut = LUT::from_vec_of_lwe(chunk, self, ctx);
-            for j in 0..chunk.len() {
-                let e = self.lut_extract(&lut, j, ctx);
-                count.blind_array_inc(&e, ctx, self);
-            }
-        }
-        count.to_many_blwes(self, ctx)
+        count.to_many_blwes(self, ctx)[..n_classes as usize].to_vec()
     }
 
     /// Blind Majority of more than p LWEs
-    fn blind_majority_extra(&self, lwes: &[LWE], ctx: &Context) -> LWE {
-        let count = self.blind_count_extra(lwes, ctx);
+    fn blind_majority_extra(&self, lwes: &[LWE], ctx: &Context, n_classes: u64) -> LWE {
+        let start = Instant::now();
+        let count = self.blind_count_extra(lwes, ctx, n_classes);
+        let duration = start.elapsed();
+        println!("[TIME] Blind count: {:?}", duration);
+
+        let start = Instant::now();
+        let maj = self.blind_argmax_byte_lwe(&count, ctx);
+        let duration = start.elapsed();
+        println!("[TIME] Blind argmax: {:?}", duration);
+        maj.lo
+    }
+
+    /// Blind Majority of more than p LWEs
+    fn blind_majority_extra_index(
+        &self,
+        lwes: &[LWE],
+        ctx: &Context,
+        n_classes: u64,
+        i: u64,
+    ) -> LWE {
+        let count = self.blind_count_extra(lwes, ctx, n_classes);
         let maj = self.blind_argmax_byte_lwe(&count, ctx);
         maj.lo
     }
@@ -69,11 +89,16 @@ mod tests {
             .map(|_| rand::random::<usize>() % p)
             .collect::<Vec<_>>();
 
+        println!("vec: {:?}", vec);
+
         let expected = {
+            // Clear count
             let mut counts = std::collections::HashMap::new();
             for &value in &vec {
                 *counts.entry(value).or_insert(0) += 1;
             }
+
+            // Clear Argmax
             counts
                 .into_iter()
                 .max_by_key(|&(_, count)| count)
@@ -89,9 +114,12 @@ mod tests {
 
         // Blind majority
         let start = Instant::now();
-        let maj = public_key.blind_majority_extra(&lwes, &ctx);
+        let maj = public_key.blind_majority_extra_index(&lwes, &ctx, p as u64, 0);
         let end = Instant::now();
-        println!("time taken: {:?}", end.duration_since(start));
+        println!(
+            "time taken for blind majority: {:?}",
+            end.duration_since(start)
+        );
 
         // Decrypt
         let actual = private_key.decrypt_lwe(&maj, &ctx);

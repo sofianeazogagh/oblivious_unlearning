@@ -95,7 +95,29 @@ impl Forest {
         println!("[TIME] Total forest evaluation: {:?}", duration);
 
         let start = Instant::now();
-        let result = public_key.blind_majority_extra(&res, ctx);
+        let result = public_key.blind_majority_extra(&res, ctx, self.trees[0].n_classes);
+        let duration = start.elapsed();
+        println!("[TIME] Majority vote: {:?}", duration);
+        result
+    }
+
+    pub fn test_index(
+        &self,
+        sample_features: &Vec<RLWE>,
+        public_key: &PublicKey,
+        ctx: &Context,
+        i: u64,
+    ) -> LWE {
+        let mut res = Vec::new();
+        let start = Instant::now();
+        for tree in self.trees.iter() {
+            res.push(tree.test(sample_features, public_key, ctx));
+        }
+        let duration = start.elapsed();
+        println!("[TIME] Total forest evaluation: {:?}", duration);
+
+        let start = Instant::now();
+        let result = public_key.blind_majority_extra_index(&res, ctx, self.trees[0].n_classes, i);
         let duration = start.elapsed();
         println!("[TIME] Majority vote: {:?}", duration);
         result
@@ -467,14 +489,13 @@ mod tests {
             // TEST FOREST
             let mut correct = 0;
             let mut duration_test_total = Duration::new(0, 0);
-            for sample in test_dataset_encrypted.records.iter() {
-                let sample_features = sample.features.clone();
-                let sample_class = sample.class.clone();
-                let class_one_hot = private_key.decrypt_lwe_vector(&sample_class, &ctx);
+            for (i, sample) in test_dataset_encrypted.records.iter().enumerate() {
+                let class_one_hot = private_key.decrypt_lwe_vector(&sample.class, &ctx);
                 let ground_truth = class_one_hot.iter().position(|&x| x == 1).unwrap() as u64;
+
                 // INFERENCE
                 let start_test = Instant::now();
-                let result = forest.test(&sample_features, &public_key, &ctx);
+                let result = forest.test_index(&sample.features, &public_key, &ctx, i as u64);
                 let duration_test = start_test.elapsed();
                 duration_test_total += duration_test;
                 let result_clear = private_key.decrypt_lwe(&result, &ctx);
