@@ -400,7 +400,7 @@ mod tests {
             std::fs::create_dir_all(FOLDER).unwrap();
         }
 
-        let num_trials = 1;
+        let num_trials = 10;
         for i in 0..num_trials {
             let dataset_name = "iris";
             // let dataset_name = "adult";
@@ -505,16 +505,12 @@ mod tests {
                 // If the result is good we increase the accuracy
                 if ground_truth == result_clear {
                     correct += 1;
-                } else if result_clear == n_classes {
-                    // If the sample is not classified i.e the leaf is empty, it should not decrease the accuracy
-                    correct += 1;
                 }
             }
 
             let average_duration_test = Duration::from_secs_f64(
                 duration_test_total.as_secs_f64() / test_dataset_encrypted.records.len() as f64,
             );
-
             let accuracy = correct as f64 / test_dataset_encrypted.records.len() as f64;
             println!("Accuracy: {:?}", accuracy);
 
