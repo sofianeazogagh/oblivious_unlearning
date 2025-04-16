@@ -8,7 +8,7 @@ pub mod tree;
 use revolut::radix::{ByteByteLUT, NyblByteLUT};
 // use revolut::{key, Context, PublicKey};
 // REVOLUT
-pub use revolut::{radix::ByteLWE, LUT, LWE, Context, PrivateKey, PublicKey};
+pub use revolut::{radix::ByteLWE, Context, PrivateKey, PublicKey, LUT, LWE};
 
 // TFHE
 use tfhe::core_crypto::prelude::*;

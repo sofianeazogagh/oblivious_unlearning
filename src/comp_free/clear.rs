@@ -126,7 +126,6 @@ impl ClearTree {
             } else {
                 leaf.label = max_index as u64;
             }
-
         }
     }
 
@@ -256,7 +255,11 @@ impl ClearForest {
         correct as f64 / total as f64
     }
 
-    pub fn fit_dataset(train_dataset: &ClearDataset, test_dataset: &ClearDataset, dataset_name: &str) -> ClearForest {
+    pub fn fit_dataset(
+        train_dataset: &ClearDataset,
+        test_dataset: &ClearDataset,
+        dataset_name: &str,
+    ) -> (ClearForest, f64) {
         let num_trees = 64;
         let depth = 4;
         let max_features = train_dataset.max_features;
@@ -280,7 +283,7 @@ impl ClearForest {
         }
         println!("Best accuracy: {}", best_accuracy);
 
-        best_model
+        (best_model, best_accuracy)
     }
 }
 
@@ -361,29 +364,27 @@ mod tests {
         // println!("Best model saved to: {}", filepath);
     }
 
-
     #[test]
     fn test_argmax_order() {
         let dataset_name = "iris";
         let num_trees = 64;
         let depth = 4;
-        let best_accuracy: f64 = 1.0;
         let ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
         let private_key = key(ctx.parameters());
         let public_key = &private_key.public_key;
-        
+
         let dataset = ClearDataset::from_file("data/iris-uci/iris.csv".to_string());
         let (train_dataset, test_dataset) = dataset.split(0.8);
 
         // find the best model
-        let mut forest = ClearForest::fit_dataset(&train_dataset, &test_dataset, dataset_name);
-
+        let (mut forest, best_accuracy) =
+            ClearForest::fit_dataset(&train_dataset, &test_dataset, dataset_name);
 
         // reset the leaves
         forest.trees.iter_mut().for_each(|tree| {
             tree.final_leaves = vec![0; tree.leaves.len()];
             tree.leaves.iter_mut().enumerate().for_each(|(i, leaf)| {
-               leaf.counts = vec![0; tree.n_classes as usize];
+                leaf.counts = vec![0; tree.n_classes as usize];
             });
         });
 
@@ -391,7 +392,7 @@ mod tests {
         forest.train(&train_dataset, 0);
 
         let accuracy = forest.evaluate(&test_dataset);
+        println!("Best accuracy: {}", best_accuracy);
         println!("Accuracy with weird majority voting: {}", accuracy);
-
     }
 }

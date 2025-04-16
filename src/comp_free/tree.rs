@@ -183,7 +183,9 @@ impl Tree {
 
         // Compute the majority of each leaf
         let mut majority = Vec::new();
-        for column in leaves_columns.iter() {
+        let zero = ByteLWE::from_byte_trivially(0x00, ctx, public_key);
+        for column in leaves_columns.iter_mut() {
+            column.push(zero.clone());
             let maj = public_key.blind_argmax_byte_lwe(&column, ctx);
             majority.push(maj.lo); // We take the lo part of the ByteLWE since the classes are < 16
         }

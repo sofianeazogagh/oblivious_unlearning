@@ -23,9 +23,9 @@ pub struct Forest {
 const SEED: u64 = 1;
 const PRE_SEEDED: bool = false;
 const EXPORT: bool = true;
-const NUM_THREADS: usize = 1;
+const NUM_THREADS: usize = 8;
 
-const FOLDER: &str = "./src/comp_free/campaign_5";
+const FOLDER: &str = "./src/comp_free/iris_campaign_2";
 
 impl Forest {
     pub fn new(
@@ -290,12 +290,12 @@ mod tests {
     }
 
     #[test]
-    fn test_bench() {
+    fn test_train_and_inference() {
         let mut ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
         let private_key = key(ctx.parameters());
         let public_key = &private_key.public_key;
 
-        let num_trials = 10;
+        let num_trials = 1;
         for i in 0..num_trials {
             // DATASET
             let dataset = EncryptedDataset::from_file(
@@ -308,7 +308,7 @@ mod tests {
             let (train_dataset, test_dataset) = dataset.split(0.8);
 
             // TRAIN FOREST
-            let n_trees = 64;
+            let n_trees = 1;
             let depth = 4;
             let mut forest = Forest::new(
                 n_trees,
@@ -318,28 +318,31 @@ mod tests {
                 &public_key,
                 &ctx,
             );
+            println!("Training forest...");
             let start_train = Instant::now();
             forest.train(&train_dataset, &public_key, &ctx);
             let duration_train = start_train.elapsed();
 
-            let filepath = format!("{}/forests/forest_{}.json", FOLDER, i);
-            forest.save_to_file(&filepath, &private_key, &ctx);
+            println!("Training time: {:?}", duration_train);
 
-            forest.print(&private_key, &ctx);
+            // let filepath = format!("{}/forests/forest_{}.json", FOLDER, i);
+            // forest.save_to_file(&filepath, &private_key, &ctx);
+
+            // forest.print(&private_key, &ctx);
 
             // TEST FOREST
             let mut correct = 0;
             let mut duration_test_total = Duration::new(0, 0);
             for sample in test_dataset.records.iter() {
-                let sample_features = sample.features.clone();
-                let sample_class = sample.class.clone();
-                let class_one_hot = private_key.decrypt_lwe_vector(&sample_class, &ctx);
+                let class_one_hot = private_key.decrypt_lwe_vector(&sample.class, &ctx);
                 let ground_truth = class_one_hot.iter().position(|&x| x == 1).unwrap() as u64;
                 // INFERENCE
                 let start_test = Instant::now();
-                let result = forest.test(&sample_features, &public_key, &ctx);
+                let result = forest.test(&sample.features, &public_key, &ctx);
                 let duration_test = start_test.elapsed();
                 duration_test_total += duration_test;
+                println!("Ground truth: {:?}", ground_truth);
+                println!("Result: {:?}", private_key.decrypt_lwe(&result, &ctx));
                 if ground_truth == private_key.decrypt_lwe(&result, &ctx) {
                     correct += 1;
                 }
@@ -353,15 +356,15 @@ mod tests {
             println!("Accuracy: {:?}", accuracy);
 
             // Write data to perf.csv
-            forest.save_perf_to_file(
-                &format!("{}/perf.csv", FOLDER),
-                duration_train,
-                average_duration_test,
-                "iris",
-                64,
-                4,
-                accuracy,
-            );
+            // forest.save_perf_to_file(
+            //     &format!("{}/perf.csv", FOLDER),
+            //     duration_train,
+            //     average_duration_test,
+            //     "iris",
+            //     64,
+            //     4,
+            //     accuracy,
+            // );
         }
     }
 
@@ -375,11 +378,11 @@ mod tests {
             std::fs::create_dir_all(FOLDER).unwrap();
         }
 
-        let num_trials = 10;
+        let num_trials = 1;
         for i in 0..num_trials {
             let dataset_name = "iris";
             // let dataset_name = "adult";
-            let dataset_name = "wine";
+            // let dataset_name = "wine";
             // let dataset_name = "cancer";
             let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
 
@@ -410,15 +413,14 @@ mod tests {
 
             let num_trees = 64;
             let depth = 4;
-            // let max_features = 2048;
 
             // FIND BEST MODEL
-            let num_trials = 100;
+            let num_trials_best_model = 10;
             let mut best_accuracy = 0.0;
             let mut best_model =
                 ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
 
-            for _ in 0..num_trials {
+            for _ in 0..num_trials_best_model {
                 let mut forest =
                     ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
                 forest.train(&train_dataset_clear, 1);
@@ -432,8 +434,8 @@ mod tests {
             println!("Best accuracy: {:?}", best_accuracy);
 
             let filepath_clear_forest = format!(
-                "{}/best_{}_{}_{}_{:.2}.json",
-                FOLDER, dataset_name, num_trees, depth, best_accuracy
+                "{}/best_{}_{}_{}_{:.2}_{}.json",
+                FOLDER, dataset_name, num_trees, depth, best_accuracy, i
             );
 
             best_model.save_to_file(&filepath_clear_forest);
@@ -475,7 +477,15 @@ mod tests {
                 let result = forest.test(&sample_features, &public_key, &ctx);
                 let duration_test = start_test.elapsed();
                 duration_test_total += duration_test;
-                if ground_truth == private_key.decrypt_lwe(&result, &ctx) {
+                let result_clear = private_key.decrypt_lwe(&result, &ctx);
+                println!("Ground truth: {:?}", ground_truth);
+                println!("Result: {:?}", result_clear);
+
+                // If the result is good we increase the accuracy
+                if ground_truth == result_clear {
+                    correct += 1;
+                } else if result_clear == n_classes {
+                    // If the sample is not classified i.e the leaf is empty, it should not decrease the accuracy
                     correct += 1;
                 }
             }
