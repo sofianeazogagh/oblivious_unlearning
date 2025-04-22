@@ -23,9 +23,9 @@ pub struct Forest {
 const SEED: u64 = 1;
 const PRE_SEEDED: bool = false;
 const EXPORT: bool = true;
-const NUM_THREADS: usize = 8;
+const NUM_THREADS: usize = 1;
 
-const FOLDER: &str = "./src/comp_free/iris_campaign_2";
+const FOLDER: &str = "./src/comp_free/cancer_campaign_2"; // pid = 1438931
 
 impl Forest {
     pub fn new(
@@ -402,10 +402,10 @@ mod tests {
 
         let num_trials = 10;
         for i in 0..num_trials {
-            let dataset_name = "iris";
+            // let dataset_name = "iris";
             // let dataset_name = "adult";
             // let dataset_name = "wine";
-            // let dataset_name = "cancer";
+            let dataset_name = "cancer";
             let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
 
             // Dataset
