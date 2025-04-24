@@ -40,6 +40,6 @@ Campaign 6 : Cancer dataset
 To run the campaign, you can use the following command:
 
 ```
-nohup cargo test --release -- --nocapture test_bench_best > /home/sofiane/Bureau/PROBONITE/src/comp_free/campaign_6/campaign_6.log &
+nohup cargo test --release -- --nocapture test_bench_best > /home/sofiane/Bureau/PROBONITE/src/comp_free/cancer_campaign_2/cancer_campaign_2.log &
 ```
 

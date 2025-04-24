@@ -25,7 +25,7 @@ const PRE_SEEDED: bool = false;
 const EXPORT: bool = true;
 const NUM_THREADS: usize = 1;
 
-const FOLDER: &str = "./src/comp_free/cancer_campaign_2"; // pid = 1438931
+const FOLDER: &str = "./src/comp_free/cancer_campaign_2";
 
 impl Forest {
     pub fn new(
