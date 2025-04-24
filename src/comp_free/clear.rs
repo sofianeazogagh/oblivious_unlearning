@@ -239,8 +239,6 @@ impl ClearForest {
                 counts[predicted_class.label as usize] += 1;
             }
 
-            println!("[CLEAR] Counts for sample {}: {:?}", i, counts);
-
             // Argmax de counts
             let mut max_count = 0;
             let mut max_index = 0;
@@ -312,8 +310,8 @@ mod tests {
 
     #[test]
     fn find_best_model() {
-        let dataset_name = "iris";
-        // let dataset_name = "wine";
+        // let dataset_name = "iris";
+        let dataset_name = "wine";
         // let dataset_name = "adult";
         let seed = 10;
         let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
@@ -361,10 +359,10 @@ mod tests {
             dataset_name, num_trees, depth, best_accuracy
         );
 
-        best_model.save_to_file(&filepath);
+        // best_model.save_to_file(&filepath);
+        // println!("Best model saved to: {}", filepath);
 
         println!("Best accuracy: {}", best_accuracy);
-        // println!("Best model saved to: {}", filepath);
     }
 
     #[test]
@@ -397,5 +395,69 @@ mod tests {
         let accuracy = forest.evaluate(&test_dataset);
         println!("Best accuracy: {}", best_accuracy);
         println!("Accuracy with weird majority voting: {}", accuracy);
+    }
+
+    #[test]
+    fn analysis_best_model() {
+        // let dataset_name = "iris";
+        // let dataset_name = "wine";
+        let dataset_name = "cancer";
+        // let dataset_name = "adult";
+        let seed = 10;
+        let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
+        let ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
+        let private_key = key(ctx.parameters());
+        let public_key = &private_key.public_key;
+
+        let dataset = ClearDataset::from_file(dataset_path.to_string());
+        let (train_dataset, test_dataset) = dataset.split(0.8);
+
+        let num_trees = 64;
+        let depth = 4;
+        let max_features = dataset.max_features;
+        let mut n_classes = 3;
+        let mut f = 4;
+
+        if dataset_name == "adult" {
+            n_classes = 2;
+            f = 105;
+        }
+
+        if dataset_name == "wine" {
+            n_classes = 3;
+            f = 13;
+        }
+
+        if dataset_name == "cancer" {
+            n_classes = 2;
+            f = 30;
+        }
+
+        let num_trials = 100;
+        let mut best_accuracy = 0.0;
+        let mut best_model =
+            ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
+        let num_trees = [8, 16, 32, 64];
+        for m in num_trees {
+            for i in 0..num_trials {
+                let mut forest =
+                    ClearForest::new_random_forest(m, depth, n_classes, max_features, f);
+                forest.train(&train_dataset, 1);
+                let accuracy = forest.evaluate(&test_dataset);
+
+                println!("Accuracy trial {}: {}", i, accuracy);
+
+                if accuracy > best_accuracy {
+                    best_accuracy = accuracy;
+                    best_model = forest;
+                }
+            }
+            println!("Best accuracy for {} trees: {}", m, best_accuracy);
+
+            let filepath = format!(
+                "./src/comp_free/test_best_model/best_{}_{}_{}_{:.2}.json",
+                dataset_name, m, depth, best_accuracy
+            );
+        }
     }
 }
