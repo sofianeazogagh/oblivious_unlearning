@@ -287,6 +287,7 @@ impl Forest {
         n_trees: u64,
         depth: u64,
         accuracy: f64,
+        real_accuracy: f64,
         best_accuracy: f64,
     ) {
         let mut file = OpenOptions::new()
@@ -298,8 +299,8 @@ impl Forest {
 
         writeln!(
             file,
-            "{},{},{},{:?},{:?},{},{}",
-            n_trees, depth, dataset_name, duration_train, duration_test, accuracy, best_accuracy
+            "{},{},{},{:?},{:?},{},{},{}",
+            n_trees, depth, dataset_name, duration_train, duration_test, accuracy, real_accuracy, best_accuracy
         )
         .unwrap();
     }

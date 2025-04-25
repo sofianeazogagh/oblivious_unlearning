@@ -25,7 +25,7 @@ const PRE_SEEDED: bool = false;
 const EXPORT: bool = true;
 const NUM_THREADS: usize = 1;
 
-const FOLDER: &str = "./src/comp_free/cancer_campaign_2";
+const FOLDER: &str = "./src/comp_free/test";
 
 impl Forest {
     pub fn new(
@@ -210,16 +210,6 @@ mod tests {
         );
         forest.save_to_file(&filepath, &private_key, &ctx);
 
-        // let forest = Forest::load_from_file(
-        //     format!(
-        //         "./src/comp_free/test_iris_forest_{}m_{}d.json",
-        //         n_trees, depth
-        //     )
-        //     .as_str(),
-        //     &ctx,
-        //     &public_key,
-        // );
-
         forest.print(&private_key, &ctx);
 
         let sample_features = dataset.records[0].features.clone();
@@ -402,11 +392,11 @@ mod tests {
 
         let num_trials = 10;
         for i in 0..num_trials {
-            // let dataset_name = "iris";
+            let dataset_name = "iris";
             // let dataset_name = "adult";
             // let dataset_name = "wine";
-            let dataset_name = "cancer";
-            let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
+            // let dataset_name = "cancer";
+            let dataset_path = format!("data/{}-uci/{}-sample.csv", dataset_name, dataset_name);
 
             // Dataset
             let dataset = ClearDataset::from_file(dataset_path.to_string());
@@ -488,6 +478,7 @@ mod tests {
 
             // TEST FOREST
             let mut correct = 0;
+            let mut abstention = 0;
             let mut duration_test_total = Duration::new(0, 0);
             for (i, sample) in test_dataset_encrypted.records.iter().enumerate() {
                 let class_one_hot = private_key.decrypt_lwe_vector(&sample.class, &ctx);
@@ -502,6 +493,11 @@ mod tests {
                 println!("Ground truth: {:?}", ground_truth);
                 println!("Result: {:?}", result_clear);
 
+                // If the result is 3 we increase the abstention
+                if result_clear == 3 {
+                    abstention += 1;
+                }
+
                 // If the result is good we increase the accuracy
                 if ground_truth == result_clear {
                     correct += 1;
@@ -512,8 +508,12 @@ mod tests {
                 duration_test_total.as_secs_f64() / test_dataset_encrypted.records.len() as f64,
             );
             let accuracy = correct as f64 / test_dataset_encrypted.records.len() as f64;
-            println!("Accuracy: {:?}", accuracy);
+            let real_accuracy =
+                (correct as f64 - abstention as f64) / test_dataset_encrypted.records.len() as f64;
 
+            println!("Accuracy: {:?}", accuracy);
+            println!("Real accuracy: {:?}", real_accuracy);
+            println!("Abstention: {:?}", abstention);
             // Write data to perf.csv
             forest.save_perf_for_bench(
                 &format!("{}/perf.csv", FOLDER),
@@ -523,6 +523,7 @@ mod tests {
                 num_trees,
                 depth,
                 accuracy,
+                real_accuracy,
                 best_accuracy,
             );
         }

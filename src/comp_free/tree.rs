@@ -11,6 +11,8 @@ use super::ctree::*;
 use super::dataset::*;
 use super::RLWE;
 
+const DEBUG: bool = true;
+
 use crate::*;
 
 // - Tree
@@ -183,7 +185,10 @@ impl Tree {
 
         // Compute the majority of each leaf
         let mut majority = Vec::new();
+        let zero_blwe = ByteLWE::from_byte_trivially(0x00, ctx, public_key);
         for column in leaves_columns.iter_mut() {
+            // We add a zero for the extra class of abstention (then if the counts are [0,0,0] it becomes [0,0,0,0] and the argmax is 3 instead of 2)
+            column.push(zero_blwe.clone());
             let maj = public_key.blind_argmax_byte_lwe(&column, ctx);
             majority.push(maj.lo); // We take the lo part of the ByteLWE since the classes are < 16
         }
@@ -205,6 +210,15 @@ impl Tree {
             let duration = start.elapsed();
             println!("[TIME] Evaluate tree: {:?}", duration);
 
+            if DEBUG {
+                let private_key = key(ctx.parameters());
+                let start = Instant::now();
+                ctree.print(&private_key, ctx);
+                let duration = start.elapsed();
+                println!("[TIME] Print tree: {:?}", duration);
+                println!("Selector: {}", private_key.decrypt_lwe(&selector, ctx));
+            }
+
             let start = Instant::now();
             // Update the leaves
             self.leaves_update(&selector, &sample.class, public_key, ctx);
@@ -222,6 +236,12 @@ impl Tree {
     pub fn test(&self, sample_features: &Vec<RLWE>, public_key: &PublicKey, ctx: &Context) -> LWE {
         let ctree = CTree::new(self, sample_features, public_key, ctx);
         let selector = ctree.evaluate(public_key, ctx);
+
+        if DEBUG {
+            let private_key = key(ctx.parameters());
+            ctree.print(&private_key, ctx);
+            println!("Selector: {}", private_key.decrypt_lwe(&selector, ctx));
+        }
 
         let lut_leaves = LUT::from_vec_of_lwe(&self.final_leaves, public_key, ctx);
         public_key.blind_array_access(&selector, &lut_leaves, ctx)
