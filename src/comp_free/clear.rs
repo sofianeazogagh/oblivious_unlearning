@@ -133,9 +133,12 @@ impl ClearTree {
         let class_index = sample.class as usize;
         let selected_leaf = self.infer(&sample);
         selected_leaf.counts[class_index] += 1;
+        println!("[CLEAR] Sample : {:?}", sample.features);
+        self.print();
     }
 
     pub fn print(&self) {
+        // println!();
         print!("---------- (f,t) ----------\n");
         self.root.print();
         for level in &self.nodes {
@@ -144,10 +147,14 @@ impl ClearTree {
             }
             println!();
         }
-        print!("\n---------([c0, c1, ..., cn], label)-----------\n");
-        for leaf in &self.leaves {
-            leaf.print(self.n_classes);
+        // print!("\n---------([c0, c1, ..., cn], label)-----------\n");
+        for class in 0..self.n_classes {
+            for leaf in &self.leaves {
+                print!("[{:>2?}]", leaf.counts[class as usize]);
+            }
+            println!();
         }
+        println!("\n");
     }
 
     pub fn generate_clear_random_tree(
