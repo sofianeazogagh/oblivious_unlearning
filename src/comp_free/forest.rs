@@ -25,7 +25,7 @@ const PRE_SEEDED: bool = false;
 const EXPORT: bool = true;
 const NUM_THREADS: usize = 1;
 
-const FOLDER: &str = "./src/comp_free/3rd_campaign/";
+const FOLDER: &str = "./src/comp_free/4th_campaign/";
 
 impl Forest {
     pub fn new(
@@ -390,16 +390,17 @@ mod tests {
             std::fs::create_dir_all(FOLDER).unwrap();
         }
 
-        let num_trials = 5;
+        let num_trials = 1;
         for i in 0..num_trials {
             println!("--------------------------------");
             println!("------------- Trial: {}", i);
             println!("--------------------------------");
 
-            let dataset_name = "cancer";
-            // let dataset_name = "adult";
-            // let dataset_name = "wine";
             // let dataset_name = "cancer";
+            // let dataset_name = "adult";
+            let dataset_name = "wine";
+            // let dataset_name = "cancer";
+            // let dataset_name = "iris";
             let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
 
             // Dataset
@@ -427,7 +428,7 @@ mod tests {
                 f = 30;
             }
 
-            let num_trees = 1;
+            let num_trees = 32;
             let depth = 4;
 
             // FIND BEST MODEL

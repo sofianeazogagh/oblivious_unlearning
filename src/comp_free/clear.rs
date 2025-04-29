@@ -115,7 +115,7 @@ impl ClearTree {
             let mut max_count = 0;
             let mut max_index = 0;
             for (i, count) in leaf.counts.iter().enumerate() {
-                if count > &max_count {
+                if count >= &max_count {
                     max_count = *count;
                     max_index = i;
                 }
@@ -257,7 +257,7 @@ impl ClearForest {
             let mut max_count = 0;
             let mut max_index = 0;
             for (i, count) in counts.iter().enumerate() {
-                if count > &max_count {
+                if count >= &max_count {
                     max_count = *count;
                     max_index = i;
                 }
