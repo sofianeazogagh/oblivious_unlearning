@@ -11,8 +11,7 @@ use super::ctree::*;
 use super::dataset::*;
 use super::RLWE;
 
-const DEBUG: bool = true;
-
+use crate::comp_free::DEBUG;
 use crate::*;
 
 // - Tree
@@ -226,8 +225,20 @@ impl Tree {
             println!("[TIME] Leaves update: {:?}", duration);
 
             if VERBOSE {
-                println!("Tree: ");
                 let private_key = key(ctx.parameters());
+
+                let decrypted_sample: Vec<Vec<u64>> = sample
+                    .features
+                    .iter()
+                    .map(|glwe| private_key.decrypt_and_decode_glwe(glwe, ctx))
+                    .collect();
+                let mut clear_sample = Vec::new();
+                for vector in decrypted_sample.iter() {
+                    let sum: u64 = vector.iter().sum();
+                    clear_sample.push(ctx.polynomial_size().0 as u64 - sum);
+                }
+                println!("[FHE] Sample: {:?}", clear_sample);
+                println!("Tree: ");
                 self.print_tree(&private_key, ctx);
             }
         }
@@ -239,6 +250,16 @@ impl Tree {
 
         if DEBUG {
             let private_key = key(ctx.parameters());
+            let decrypted_sample: Vec<Vec<u64>> = sample_features
+                .iter()
+                .map(|glwe| private_key.decrypt_and_decode_glwe(glwe, ctx))
+                .collect();
+            let mut clear_sample = Vec::new();
+            for vector in decrypted_sample.iter() {
+                let sum: u64 = vector.iter().sum();
+                clear_sample.push(ctx.polynomial_size().0 as u64 - sum);
+            }
+            println!("[FHE] Sample: {:?}", clear_sample);
             ctree.print(&private_key, ctx);
             println!("Selector: {}", private_key.decrypt_lwe(&selector, ctx));
         }

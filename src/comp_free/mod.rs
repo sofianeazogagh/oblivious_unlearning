@@ -7,6 +7,8 @@ pub mod tree;
 
 use std::time::Instant;
 
+const DEBUG: bool = true;
+
 use revolut::key;
 use revolut::radix::{ByteByteLUT, NyblByteLUT};
 // use revolut::{key, Context, PublicKey};

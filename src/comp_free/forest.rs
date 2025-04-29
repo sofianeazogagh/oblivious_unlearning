@@ -25,7 +25,7 @@ const PRE_SEEDED: bool = false;
 const EXPORT: bool = true;
 const NUM_THREADS: usize = 1;
 
-const FOLDER: &str = "./src/comp_free/test";
+const FOLDER: &str = "./src/comp_free/3rd_campaign/";
 
 impl Forest {
     pub fn new(
@@ -390,13 +390,17 @@ mod tests {
             std::fs::create_dir_all(FOLDER).unwrap();
         }
 
-        let num_trials = 10;
+        let num_trials = 5;
         for i in 0..num_trials {
-            let dataset_name = "iris";
+            println!("--------------------------------");
+            println!("------------- Trial: {}", i);
+            println!("--------------------------------");
+
+            let dataset_name = "cancer";
             // let dataset_name = "adult";
             // let dataset_name = "wine";
             // let dataset_name = "cancer";
-            let dataset_path = format!("data/{}-uci/{}-sample.csv", dataset_name, dataset_name);
+            let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
 
             // Dataset
             let dataset = ClearDataset::from_file(dataset_path.to_string());
@@ -423,11 +427,11 @@ mod tests {
                 f = 30;
             }
 
-            let num_trees = 64;
+            let num_trees = 1;
             let depth = 4;
 
             // FIND BEST MODEL
-            let num_trials_best_model = 10;
+            let num_trials_best_model = 1;
             let mut best_accuracy = 0.0;
             let mut best_model =
                 ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
@@ -435,7 +439,7 @@ mod tests {
             for _ in 0..num_trials_best_model {
                 let mut forest =
                     ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
-                forest.train(&train_dataset_clear, 1);
+                forest.train(&train_dataset_clear, 0);
                 let accuracy = forest.evaluate(&test_dataset_clear);
                 if accuracy > best_accuracy {
                     best_accuracy = accuracy;
@@ -493,8 +497,8 @@ mod tests {
                 println!("Ground truth: {:?}", ground_truth);
                 println!("Result: {:?}", result_clear);
 
-                // If the result is 3 we increase the abstention
-                if result_clear == 3 {
+                // If the result is dataset.n_classes we increase the abstention
+                if result_clear == dataset.n_classes {
                     abstention += 1;
                 }
 
@@ -509,7 +513,7 @@ mod tests {
             );
             let accuracy = correct as f64 / test_dataset_encrypted.records.len() as f64;
             let real_accuracy =
-                (correct as f64 - abstention as f64) / test_dataset_encrypted.records.len() as f64;
+                (correct as f64 + abstention as f64) / test_dataset_encrypted.records.len() as f64;
 
             println!("Accuracy: {:?}", accuracy);
             println!("Real accuracy: {:?}", real_accuracy);

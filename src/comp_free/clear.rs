@@ -1,4 +1,4 @@
-use crate::comp_free::dataset::*;
+use crate::{comp_free::dataset::*, comp_free::DEBUG, VERBOSE};
 use bincode::de;
 use rand::{distributions::uniform::SampleBorrow, Rng, RngCore};
 use revolut::{key, Context};
@@ -74,14 +74,14 @@ impl ClearTree {
             feature_index: 0,
         };
 
-        if self.root.threshold <= record.features[self.root.feature_index as usize] {
+        if self.root.threshold < record.features[self.root.feature_index as usize] {
             current_node = &self.nodes[0][0];
         } else {
             current_node = &self.nodes[0][1];
         }
 
         for idx in 1..self.depth - 1 {
-            if current_node.threshold <= record.features[current_node.feature_index as usize] {
+            if current_node.threshold < record.features[current_node.feature_index as usize] {
                 current_node = &self.nodes[idx as usize][2 * current_node.id as usize];
             } else {
                 current_node = &self.nodes[idx as usize][2 * current_node.id as usize + 1];
@@ -89,11 +89,16 @@ impl ClearTree {
         }
 
         let mut selected_leaf: &mut ClearLeaf =
-            if current_node.threshold <= record.features[current_node.feature_index as usize] {
+            if current_node.threshold < record.features[current_node.feature_index as usize] {
                 &mut self.leaves[2 * current_node.id as usize]
             } else {
                 &mut self.leaves[2 * current_node.id as usize + 1]
             };
+
+        if DEBUG {
+            println!("[CLEAR] Sample: {:?}", record.features);
+            println!("[CLEAR] Selected leaf: {:?}", selected_leaf);
+        }
 
         selected_leaf
     }
@@ -119,7 +124,7 @@ impl ClearTree {
             if label_order == 0 {
                 // if the counts are all 0, set the label to the highest class number
                 if leaf.counts.iter().sum::<u64>() == 0 {
-                    leaf.label = leaf.counts.len() as u64 - 1;
+                    leaf.label = dataset.n_classes;
                 } else {
                     leaf.label = max_index as u64;
                 }
@@ -150,7 +155,8 @@ impl ClearTree {
         // print!("\n---------([c0, c1, ..., cn], label)-----------\n");
         for class in 0..self.n_classes {
             for leaf in &self.leaves {
-                print!("[{:>2?}]", leaf.counts[class as usize]);
+                // print!("[{:>2?}]", leaf.counts[class as usize]);
+                print!("[{:02X}]", leaf.counts[class as usize]);
             }
             println!();
         }
@@ -238,9 +244,10 @@ impl ClearForest {
     pub fn evaluate(&mut self, dataset: &ClearDataset) -> f64 {
         let mut correct = 0;
         let mut total = 0;
+        let mut abstention = 0;
 
         for (i, sample) in dataset.records.iter().enumerate() {
-            let mut counts = vec![0; self.trees[0].n_classes as usize];
+            let mut counts = vec![0; self.trees[0].n_classes as usize + 1];
             for tree in self.trees.iter_mut() {
                 let predicted_class = tree.infer(&sample);
                 counts[predicted_class.label as usize] += 1;
@@ -258,9 +265,12 @@ impl ClearForest {
             if max_index as u64 == sample.class {
                 correct += 1;
             }
+            if max_index as u64 == self.trees[0].n_classes {
+                abstention += 1;
+            }
             total += 1;
         }
-        correct as f64 / total as f64
+        (correct as f64 + abstention as f64) / total as f64
     }
 
     pub fn fit_dataset(
