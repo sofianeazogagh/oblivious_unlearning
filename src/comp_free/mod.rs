@@ -7,10 +7,11 @@ pub mod tree;
 
 use std::time::Instant;
 
-const DEBUG: bool = true;
+const DEBUG: bool = false;
+const OBLIVIOUS: bool = true;
 
 use revolut::key;
-use revolut::radix::{ByteByteLUT, NyblByteLUT};
+use revolut::radix::NyblByteLUT;
 // use revolut::{key, Context, PublicKey};
 // REVOLUT
 pub use revolut::{radix::ByteLWE, Context, PrivateKey, PublicKey, LUT, LWE};
@@ -38,7 +39,6 @@ impl Majority for PublicKey {
     /// Count the number of occurences of more than p LWEs
     fn blind_count_extra(&self, lwes: &[LWE], ctx: &Context, n_classes: u64) -> Vec<ByteLWE> {
         let mut count = NyblByteLUT::from_bytes_trivially(&[0u8; 16], ctx);
-        let private_key = key(ctx.parameters());
 
         for lwe in lwes {
             count.blind_array_inc(&lwe, ctx, self);

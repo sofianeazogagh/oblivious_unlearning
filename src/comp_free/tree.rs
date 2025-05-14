@@ -11,7 +11,7 @@ use super::ctree::*;
 use super::dataset::*;
 use super::RLWE;
 
-use crate::comp_free::DEBUG;
+use crate::comp_free::{DEBUG, OBLIVIOUS};
 use crate::*;
 
 // - Tree
@@ -150,13 +150,21 @@ impl Tree {
         public_key: &PublicKey,
         ctx: &Context,
     ) {
-        for i in 0..self.n_classes {
-            self.leaves_lut[i as usize].class.blind_array_maybe_inc(
-                &selector,
-                &class[i as usize],
-                ctx,
-                public_key,
-            );
+        if !OBLIVIOUS {
+            for i in 0..self.n_classes {
+                self.leaves_lut[i as usize].class.blind_array_maybe_inc(
+                    &selector,
+                    &class[i as usize],
+                    ctx,
+                    public_key,
+                );
+            }
+        } else {
+            for i in 0..self.n_classes {
+                self.leaves_lut[i as usize]
+                    .class
+                    .blind_array_maybe_inc_or_dec(&selector, &class[i as usize], ctx, public_key);
+            }
         }
     }
 
@@ -218,13 +226,13 @@ impl Tree {
                 println!("Selector: {}", private_key.decrypt_lwe(&selector, ctx));
             }
 
-            let start = Instant::now();
             // Update the leaves
+            let start = Instant::now();
             self.leaves_update(&selector, &sample.class, public_key, ctx);
             let duration = start.elapsed();
             println!("[TIME] Leaves update: {:?}", duration);
 
-            if VERBOSE {
+            if DEBUG {
                 let private_key = key(ctx.parameters());
 
                 let decrypted_sample: Vec<Vec<u64>> = sample

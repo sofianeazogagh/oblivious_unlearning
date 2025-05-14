@@ -25,7 +25,7 @@ const PRE_SEEDED: bool = false;
 const EXPORT: bool = true;
 const NUM_THREADS: usize = 1;
 
-const FOLDER: &str = "./src/comp_free/4th_campaign/";
+const FOLDER: &str = "./src/comp_free/5th_campaign/";
 
 impl Forest {
     pub fn new(
@@ -398,21 +398,19 @@ mod tests {
 
             // let dataset_name = "cancer";
             // let dataset_name = "adult";
-            let dataset_name = "wine";
+            // let dataset_name = "wine";
             // let dataset_name = "cancer";
-            // let dataset_name = "iris";
+            let dataset_name = "iris";
             let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
 
             // Dataset
             let dataset = ClearDataset::from_file(dataset_path.to_string());
 
-            let (train_dataset_clear, test_dataset_clear) = dataset.split(0.8);
-
             // Base case is for iris
             let mut n_classes = 3;
             let mut f = 4;
             let max_features = dataset.max_features;
-
+            let mut split_percentage = 0.8;
             if dataset_name == "adult" {
                 n_classes = 2;
                 f = 105;
@@ -427,6 +425,8 @@ mod tests {
                 n_classes = 2;
                 f = 30;
             }
+
+            let (train_dataset_clear, test_dataset_clear) = dataset.split(split_percentage);
 
             let num_trees = 32;
             let depth = 4;
