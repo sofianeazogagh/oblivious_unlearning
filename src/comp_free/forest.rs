@@ -389,148 +389,164 @@ mod tests {
         if !std::path::Path::new(FOLDER).exists() {
             std::fs::create_dir_all(FOLDER).unwrap();
         }
+        for num_trees in [8, 16] {
+            let num_trials = 10;
+            for i in 0..num_trials {
+                println!("--------------------------------");
+                println!("------------- Trial: {}", i);
+                println!("--------------------------------");
 
-        let num_trials = 1;
-        for i in 0..num_trials {
-            println!("--------------------------------");
-            println!("------------- Trial: {}", i);
-            println!("--------------------------------");
+                // let dataset_name = "cancer";
+                // let dataset_name = "adult";
+                // let dataset_name = "wine";
+                // let dataset_name = "cancer";
+                let dataset_name = "iris";
+                let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
 
-            // let dataset_name = "cancer";
-            // let dataset_name = "adult";
-            // let dataset_name = "wine";
-            // let dataset_name = "cancer";
-            let dataset_name = "iris";
-            let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
+                // Dataset
+                let dataset = ClearDataset::from_file(dataset_path.to_string());
 
-            // Dataset
-            let dataset = ClearDataset::from_file(dataset_path.to_string());
+                // Base case is for iris
+                let mut n_classes = 3;
+                let mut f = 4;
+                let max_features = dataset.max_features;
+                let mut split_percentage = 0.8;
+                if dataset_name == "adult" {
+                    n_classes = 2;
+                    f = 105;
+                }
 
-            // Base case is for iris
-            let mut n_classes = 3;
-            let mut f = 4;
-            let max_features = dataset.max_features;
-            let mut split_percentage = 0.8;
-            if dataset_name == "adult" {
-                n_classes = 2;
-                f = 105;
-            }
+                if dataset_name == "wine" {
+                    n_classes = 3;
+                    f = 13;
+                }
 
-            if dataset_name == "wine" {
-                n_classes = 3;
-                f = 13;
-            }
+                if dataset_name == "cancer" {
+                    n_classes = 2;
+                    f = 30;
+                }
 
-            if dataset_name == "cancer" {
-                n_classes = 2;
-                f = 30;
-            }
+                let (train_dataset_clear, test_dataset_clear) = dataset.split(split_percentage);
 
-            let (train_dataset_clear, test_dataset_clear) = dataset.split(split_percentage);
+                // let num_trees = 32;
+                let depth = 4;
 
-            let num_trees = 32;
-            let depth = 4;
-
-            // FIND BEST MODEL
-            let num_trials_best_model = 1;
-            let mut best_accuracy = 0.0;
-            let mut best_model =
-                ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
-
-            for _ in 0..num_trials_best_model {
-                let mut forest =
+                // FIND BEST MODEL
+                let num_trials_best_model = 1;
+                let mut best_accuracy = 0.0;
+                let mut best_model =
                     ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
-                forest.train(&train_dataset_clear, 0);
-                let accuracy = forest.evaluate(&test_dataset_clear);
-                if accuracy > best_accuracy {
-                    best_accuracy = accuracy;
-                    best_model = forest;
-                }
-            }
 
-            println!("Best accuracy: {:?}", best_accuracy);
-
-            let filepath_clear_forest = format!(
-                "{}/best_{}_{}_{}_{:.2}_{}.json",
-                FOLDER, dataset_name, num_trees, depth, best_accuracy, i
-            );
-
-            best_model.save_to_file(&filepath_clear_forest);
-
-            let train_dataset_encrypted =
-                EncryptedDataset::from_clear_dataset(&train_dataset_clear, &private_key, &mut ctx);
-
-            let test_dataset_encrypted =
-                EncryptedDataset::from_clear_dataset(&test_dataset_clear, &private_key, &mut ctx);
-
-            // TRAIN FOREST
-            let mut forest =
-                Forest::new_from_file(filepath_clear_forest.as_str(), &public_key, &ctx);
-
-            let start_train = Instant::now();
-            forest.train(&train_dataset_encrypted, &public_key, &ctx);
-            let duration_train = start_train.elapsed();
-
-            // Create the directory "forests" if it does not exist
-            let forests_dir = format!("{}/forests", FOLDER);
-            if !std::path::Path::new(&forests_dir).exists() {
-                std::fs::create_dir_all(&forests_dir).expect("Failed to create forests directory");
-            }
-            let filepath_forest = format!("{}/forests/forest_{}.json", FOLDER, i);
-            forest.save_to_file(&filepath_forest, &private_key, &ctx);
-
-            forest.print(&private_key, &ctx);
-
-            // TEST FOREST
-            let mut correct = 0;
-            let mut abstention = 0;
-            let mut duration_test_total = Duration::new(0, 0);
-            for (i, sample) in test_dataset_encrypted.records.iter().enumerate() {
-                let class_one_hot = private_key.decrypt_lwe_vector(&sample.class, &ctx);
-                let ground_truth = class_one_hot.iter().position(|&x| x == 1).unwrap() as u64;
-
-                // INFERENCE
-                let start_test = Instant::now();
-                let result = forest.test_index(&sample.features, &public_key, &ctx, i as u64);
-                let duration_test = start_test.elapsed();
-                duration_test_total += duration_test;
-                let result_clear = private_key.decrypt_lwe(&result, &ctx);
-                println!("Ground truth: {:?}", ground_truth);
-                println!("Result: {:?}", result_clear);
-
-                // If the result is dataset.n_classes we increase the abstention
-                if result_clear == dataset.n_classes {
-                    abstention += 1;
+                for _ in 0..num_trials_best_model {
+                    let mut forest = ClearForest::new_random_forest(
+                        num_trees,
+                        depth,
+                        n_classes,
+                        max_features,
+                        f,
+                    );
+                    forest.train(&train_dataset_clear, 0);
+                    let accuracy = forest.evaluate(&test_dataset_clear);
+                    if accuracy > best_accuracy {
+                        best_accuracy = accuracy;
+                        best_model = forest;
+                    }
                 }
 
-                // If the result is good we increase the accuracy
-                if ground_truth == result_clear {
-                    correct += 1;
+                println!("Best accuracy: {:?}", best_accuracy);
+
+                let dir_path = format!("{}/{}/{}", FOLDER, dataset_name, num_trees);
+
+                if !std::path::Path::new(&dir_path).exists() {
+                    std::fs::create_dir_all(&dir_path).expect("Failed to create directory");
                 }
+                let filepath_clear_forest = format!(
+                    "{}/best_{}_{}_{}_{:.2}_{}.json",
+                    dir_path, dataset_name, num_trees, depth, best_accuracy, i
+                );
+
+                best_model.save_to_file(&filepath_clear_forest);
+
+                let train_dataset_encrypted = EncryptedDataset::from_clear_dataset(
+                    &train_dataset_clear,
+                    &private_key,
+                    &mut ctx,
+                );
+
+                let test_dataset_encrypted = EncryptedDataset::from_clear_dataset(
+                    &test_dataset_clear,
+                    &private_key,
+                    &mut ctx,
+                );
+
+                // TRAIN FOREST
+                let mut forest =
+                    Forest::new_from_file(filepath_clear_forest.as_str(), &public_key, &ctx);
+
+                let start_train = Instant::now();
+                forest.train(&train_dataset_encrypted, &public_key, &ctx);
+                let duration_train = start_train.elapsed();
+
+                // Create the directory "forests" if it does not exist
+                let forests_dir = format!("{}/forests", dir_path);
+                if !std::path::Path::new(&forests_dir).exists() {
+                    std::fs::create_dir_all(&forests_dir)
+                        .expect("Failed to create forests directory");
+                }
+                let filepath_forest = format!("{}/forest_{}.json", forests_dir, i);
+                forest.save_to_file(&filepath_forest, &private_key, &ctx);
+
+                // TEST FOREST
+                let mut correct = 0;
+                let mut abstention = 0;
+                let mut duration_test_total = Duration::new(0, 0);
+                for (i, sample) in test_dataset_encrypted.records.iter().enumerate() {
+                    let class_one_hot = private_key.decrypt_lwe_vector(&sample.class, &ctx);
+                    let ground_truth = class_one_hot.iter().position(|&x| x == 1).unwrap() as u64;
+
+                    // INFERENCE
+                    let start_test = Instant::now();
+                    let result = forest.test_index(&sample.features, &public_key, &ctx, i as u64);
+                    let duration_test = start_test.elapsed();
+                    duration_test_total += duration_test;
+                    let result_clear = private_key.decrypt_lwe(&result, &ctx);
+                    println!("Ground truth: {:?}", ground_truth);
+                    println!("Result: {:?}", result_clear);
+
+                    // If the result is dataset.n_classes we increase the abstention
+                    if result_clear == dataset.n_classes {
+                        abstention += 1;
+                    }
+
+                    // If the result is good we increase the accuracy
+                    if ground_truth == result_clear {
+                        correct += 1;
+                    }
+                }
+
+                let average_duration_test = Duration::from_secs_f64(
+                    duration_test_total.as_secs_f64() / test_dataset_encrypted.records.len() as f64,
+                );
+                let accuracy = correct as f64 / test_dataset_encrypted.records.len() as f64;
+                let real_accuracy = (correct as f64 + abstention as f64)
+                    / test_dataset_encrypted.records.len() as f64;
+
+                println!("Accuracy: {:?}", accuracy);
+                println!("Real accuracy: {:?}", real_accuracy);
+                println!("Abstention: {:?}", abstention);
+                // Write data to perf.csv
+                forest.save_perf_for_bench(
+                    &format!("{}/perf.csv", dir_path),
+                    duration_train,
+                    average_duration_test,
+                    dataset_name,
+                    num_trees,
+                    depth,
+                    accuracy,
+                    real_accuracy,
+                    best_accuracy,
+                );
             }
-
-            let average_duration_test = Duration::from_secs_f64(
-                duration_test_total.as_secs_f64() / test_dataset_encrypted.records.len() as f64,
-            );
-            let accuracy = correct as f64 / test_dataset_encrypted.records.len() as f64;
-            let real_accuracy =
-                (correct as f64 + abstention as f64) / test_dataset_encrypted.records.len() as f64;
-
-            println!("Accuracy: {:?}", accuracy);
-            println!("Real accuracy: {:?}", real_accuracy);
-            println!("Abstention: {:?}", abstention);
-            // Write data to perf.csv
-            forest.save_perf_for_bench(
-                &format!("{}/perf.csv", FOLDER),
-                duration_train,
-                average_duration_test,
-                dataset_name,
-                num_trees,
-                depth,
-                accuracy,
-                real_accuracy,
-                best_accuracy,
-            );
         }
     }
 }
