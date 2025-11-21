@@ -196,8 +196,8 @@ impl Tree {
         for column in leaves_columns.iter_mut() {
             // We add a zero for the extra class of abstention (then if the counts are [0,0,0] it becomes [0,0,0,0] and the argmax is 3 instead of 2)
             column.push(zero_blwe.clone());
-            let maj = public_key.blind_argmax_byte_lwe(&column, ctx);
-            majority.push(maj.lo); // We take the lo part of the ByteLWE since the classes are < 16
+            let maj = public_key.blind_argmax_blwe_lwe(&column, ctx);
+            majority.push(maj);
         }
 
         self.final_leaves = majority;
@@ -250,6 +250,72 @@ impl Tree {
                 self.print_tree(&private_key, ctx);
             }
         }
+    }
+
+    pub fn train_fully_oblivious(
+        &mut self,
+        sample: &EncryptedSample,
+        public_key: &PublicKey,
+        ctx: &Context,
+    ) -> LWE {
+        let start = Instant::now();
+        // Compile the tree
+        let ctree = CTree::new(self, &sample.features, public_key, ctx);
+        let duration = start.elapsed();
+        println!("[TIME] Compile tree: {:?}", duration);
+
+        let start = Instant::now();
+        // Traverse the tree
+        let selector = ctree.evaluate(public_key, ctx);
+        let duration = start.elapsed();
+        println!("[TIME] Evaluate tree: {:?}", duration);
+
+        if DEBUG {
+            let private_key = key(ctx.parameters());
+            let start = Instant::now();
+            ctree.print(&private_key, ctx);
+            let duration = start.elapsed();
+            println!("[TIME] Print tree: {:?}", duration);
+            println!("Selector: {}", private_key.decrypt_lwe(&selector, ctx));
+        }
+
+        // Update the leaves
+        let start = Instant::now();
+        self.leaves_update(&selector, &sample.class, public_key, ctx);
+        let duration = start.elapsed();
+        println!("[TIME] Leaves update: {:?}", duration);
+
+        // Peform a majority vote on leaves
+        let start = Instant::now();
+        self.leaves_majority(public_key, ctx);
+        let duration = start.elapsed();
+        println!("[TIME] Leaves majority: {:?}", duration);
+
+        // Read the class from the final leaves
+        let start = Instant::now();
+        let final_leaves_lut = LUT::from_vec_of_lwe(&self.final_leaves, public_key, ctx);
+        let class = public_key.blind_array_access(&selector, &final_leaves_lut, ctx);
+        let duration = start.elapsed();
+        println!("[TIME] Blind read: {:?}", duration);
+
+        if DEBUG {
+            let private_key = key(ctx.parameters());
+
+            let decrypted_sample: Vec<Vec<u64>> = sample
+                .features
+                .iter()
+                .map(|glwe| private_key.decrypt_and_decode_glwe(glwe, ctx))
+                .collect();
+            let mut clear_sample = Vec::new();
+            for vector in decrypted_sample.iter() {
+                let sum: u64 = vector.iter().sum();
+                clear_sample.push(ctx.polynomial_size().0 as u64 - sum);
+            }
+            println!("[FHE] Sample: {:?}", clear_sample);
+            println!("Tree: ");
+            self.print_tree(&private_key, ctx);
+        }
+        class
     }
 
     pub fn test(&self, sample_features: &Vec<RLWE>, public_key: &PublicKey, ctx: &Context) -> LWE {

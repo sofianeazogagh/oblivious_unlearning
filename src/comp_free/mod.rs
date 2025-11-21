@@ -37,10 +37,11 @@ trait Majority {
 
 impl Majority for PublicKey {
     /// Count the number of occurences of more than p LWEs
+    /// Cost : n * (5 br + 2 ks)
     fn blind_count_extra(&self, lwes: &[LWE], ctx: &Context, n_classes: u64) -> Vec<ByteLWE> {
         let mut count = NyblByteLUT::from_bytes_trivially(&[0u8; 16], ctx);
-
         for lwe in lwes {
+            // 5 br + 2 ks
             count.blind_array_inc(&lwe, ctx, self);
         }
         count.to_many_blwes(self, ctx)[..n_classes as usize].to_vec()
@@ -54,13 +55,14 @@ impl Majority for PublicKey {
         println!("[TIME] Blind count: {:?}", duration);
 
         let start = Instant::now();
-        let maj = self.blind_argmax_byte_lwe(&count, ctx);
+        let maj = self.blind_argmax_blwe_lwe(&count, ctx);
         let duration = start.elapsed();
         println!("[TIME] Blind argmax: {:?}", duration);
-        maj.lo
+        maj
     }
 
     /// Blind Majority of more than p LWEs
+    /// n * (5 br + 2 ks) + (n-1) * (11 br + 8KS + 3pKS)
     fn blind_majority_extra_index(
         &self,
         lwes: &[LWE],
@@ -68,9 +70,11 @@ impl Majority for PublicKey {
         n_classes: u64,
         i: u64,
     ) -> LWE {
+        // n * (5 br + 2 ks)
         let count = self.blind_count_extra(lwes, ctx, n_classes);
-        let maj = self.blind_argmax_byte_lwe(&count, ctx);
-        maj.lo
+        // (n-1)*(11 br + 8KS + 3pKS)
+        let maj = self.blind_argmax_blwe_lwe(&count, ctx);
+        maj
     }
 }
 

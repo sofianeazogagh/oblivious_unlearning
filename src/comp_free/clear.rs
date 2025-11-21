@@ -1,8 +1,14 @@
+use std::fs::File;
+
 use crate::{comp_free::dataset::*, comp_free::DEBUG, VERBOSE};
 use bincode::de;
 use rand::{distributions::uniform::SampleBorrow, Rng, RngCore};
+use regex::Regex;
 use revolut::{key, Context};
+use serde_json::Value;
 use tfhe::shortint::parameters::PARAM_MESSAGE_4_CARRY_0;
+
+const OVERFLOW: bool = true;
 
 #[derive(Clone)]
 pub struct ClearRoot {
@@ -134,10 +140,59 @@ impl ClearTree {
         }
     }
 
+    pub fn train_with_overflow(&mut self, dataset: &ClearDataset, label_order: u64) {
+        for sample in dataset.records.iter() {
+            self.update_statistic_with_overflow(sample);
+        }
+
+        // majoority voting to decide the class of each leaf
+        for leaf in self.leaves.iter_mut() {
+            leaf.counts = leaf.counts.iter().map(|count| *count as u64).collect();
+
+            let mut max_count = 0;
+            let mut max_index = 0;
+            for (i, count) in leaf.counts.iter().enumerate() {
+                if count >= &max_count {
+                    max_count = *count;
+                    max_index = i;
+                }
+            }
+
+            if label_order == 0 {
+                // if the counts are all 0, set the label to the highest class number
+                if leaf.counts.iter().sum::<u64>() == 0 {
+                    leaf.label = dataset.n_classes;
+                } else {
+                    leaf.label = max_index as u64;
+                }
+            } else {
+                leaf.label = max_index as u64;
+            }
+        }
+    }
+
     pub fn update_statistic(&mut self, sample: &ClearSample) {
         let class_index = sample.class as usize;
         let selected_leaf = self.infer(&sample);
+
         selected_leaf.counts[class_index] += 1;
+
+        if selected_leaf.counts[class_index] == 255 {
+            println!("Overflow detected");
+        }
+
+        if DEBUG {
+            println!("[CLEAR] Sample : {:?}", sample.features);
+            self.print();
+        }
+    }
+
+    pub fn update_statistic_with_overflow(&mut self, sample: &ClearSample) {
+        let class_index = sample.class as usize;
+        let selected_leaf = self.infer(&sample);
+
+        selected_leaf.counts[class_index] = (selected_leaf.counts[class_index] + 1) % 256;
+
         if DEBUG {
             println!("[CLEAR] Sample : {:?}", sample.features);
             self.print();
@@ -243,6 +298,13 @@ impl ClearForest {
         }
     }
 
+    pub fn train_with_overflow(&mut self, dataset: &ClearDataset, label_order: u64) {
+        for tree in self.trees.iter_mut() {
+            tree.train_with_overflow(dataset, label_order);
+            tree.final_leaves = tree.leaves.iter().map(|leaf| leaf.label).collect();
+        }
+    }
+
     pub fn evaluate(&mut self, dataset: &ClearDataset) -> f64 {
         let mut correct = 0;
         let mut total = 0;
@@ -305,6 +367,35 @@ impl ClearForest {
 
         (best_model, best_accuracy)
     }
+
+    pub fn print(&self) {
+        for tree in self.trees.iter() {
+            tree.print();
+        }
+    }
+}
+
+fn get_accuracy_for_index(
+    dataset_name: &str,
+    num_trees: u64,
+    depth: u64,
+    index: u64,
+) -> Option<String> {
+    let folder_path = format!("src/comp_free/{}_from_AW/{}/", dataset_name, num_trees);
+
+    if let Ok(entries) = std::fs::read_dir(folder_path) {
+        for entry in entries.flatten() {
+            if let Ok(file_name) = entry.file_name().into_string() {
+                let re = Regex::new(&format!(r"best_.*?_(\d+\.\d+)_{}.json$", index)).unwrap();
+                if let Some(caps) = re.captures(&file_name) {
+                    if let Some(accuracy_str) = caps.get(1) {
+                        return Some(accuracy_str.as_str().to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 mod tests {
@@ -321,7 +412,7 @@ mod tests {
         let dataset = ClearDataset::from_file("data/iris-uci/iris.csv".to_string());
         let (train_dataset, test_dataset) = dataset.split(0.8);
 
-        let mut forest = ClearForest::load_from_file(filepath, &ctx, &public_key);
+        let mut forest = ClearForest::load_from_file(filepath);
         forest.train(&train_dataset, 1);
         let accuracy = forest.evaluate(&test_dataset);
         println!("Accuracy: {}", accuracy);
@@ -471,11 +562,6 @@ mod tests {
                 }
             }
             println!("Best accuracy for {} trees: {}", m, best_accuracy);
-
-            let filepath = format!(
-                "./src/comp_free/test_best_model/best_{}_{}_{}_{:.2}.json",
-                dataset_name, m, depth, best_accuracy
-            );
         }
     }
 
@@ -530,11 +616,138 @@ mod tests {
                     best_model = forest;
                 }
             }
+        }
+    }
 
-            let filepath = format!(
-                "./src/comp_free/test_best_model/best_{}_{}_{}_{:.2}.json",
-                dataset_name, num_trees, d, best_accuracy
-            );
+    #[test]
+    fn batched_training() {
+        // let dataset_name = "iris";
+        // let dataset_name = "wine";
+        // let dataset_name = "cancer";
+        // let dataset_name = "adult";
+        let dataset_name = "credit";
+        let dataset_path = format!("data/{}-uci/{}.csv", dataset_name, dataset_name);
+
+        let dataset = ClearDataset::from_file(dataset_path.to_string());
+        let (train_dataset, test_dataset) = dataset.split(0.8);
+
+        // let num_trees = 8;
+        let depth = 4;
+        let max_features = dataset.max_features;
+        let mut n_classes = 3;
+        let mut f = 4;
+
+        if dataset_name == "wine" {
+            n_classes = 3;
+            f = 13;
+        }
+
+        if dataset_name == "cancer" {
+            n_classes = 2;
+            f = 30;
+        }
+
+        if dataset_name == "adult" {
+            n_classes = 2;
+            f = 14;
+        }
+
+        if dataset_name == "credit" {
+            n_classes = 2;
+            f = 15;
+        }
+
+        let batch_size = 10;
+        let num_batches = train_dataset.records.len() / batch_size;
+        let batches = train_dataset.extract_batches(batch_size);
+
+        for num_trees in [8, 16, 32, 64] {
+            for i in 0..10 {
+                // let best_accuracy =
+                //     get_accuracy_for_index(dataset_name, num_trees, depth, i).unwrap();
+                // println!("Best accuracy: {:?}", best_accuracy);
+                println!("Number of trees: {}", num_trees);
+
+                // Train the best model on the first batch
+                let num_trials = 100;
+                let mut best_accuracy = 0.0;
+                let mut best_model =
+                    ClearForest::new_random_forest(num_trees, depth, n_classes, max_features, f);
+                for i in 0..num_trials {
+                    let mut forest = ClearForest::new_random_forest(
+                        num_trees,
+                        depth,
+                        n_classes,
+                        max_features,
+                        f,
+                    );
+                    forest.train(&batches[0], 1);
+                    let accuracy = forest.evaluate(&test_dataset);
+
+                    if accuracy > best_accuracy {
+                        best_accuracy = accuracy;
+                        best_model = forest;
+                    }
+                }
+
+                // // Get the best model from the folder
+                // let filepath = format!(
+                //     "./src/comp_free/{}_from_AW/{}/best_{}_{}_{}_{}_{}.json",
+                //     dataset_name, num_trees, dataset_name, num_trees, depth, best_accuracy, i
+                // );
+                // println!("Filepath: {}", filepath);
+                // let mut best_model = ClearForest::load_from_file(filepath.as_str());
+
+                // best_model.print();
+
+                println!(
+                    "Accuracy after batch of {} samples: ({:.2}, {:.2})",
+                    batch_size, best_accuracy, best_accuracy
+                );
+
+                // Keep training the best model on the remaining batches
+                let mut best_model_with_overflow = best_model.clone();
+                for b in 1..num_batches {
+                    best_model.train(&batches[b], 1);
+                    best_model_with_overflow.train_with_overflow(&batches[b], 1);
+                    let accuracy = best_model.evaluate(&test_dataset);
+                    let accuracy_with_overflow = best_model_with_overflow.evaluate(&test_dataset);
+                    println!(
+                        "Accuracy after batch of {} samples: ({:.2}, {:.2})",
+                        batch_size * (b + 1),
+                        accuracy,
+                        accuracy_with_overflow
+                    );
+
+                    // if accuracy != accuracy_with_overflow {
+                    //     println!("-------------Tree Clear-------------");
+                    //     // best_model.print();
+                    //     println!("-------------Tree FHE-------------");
+                    //     // best_model_with_overflow.print();
+                    // }
+
+                    // Save the current model
+                    // let no_overflow_dir = "./src/comp_free/test_batch_models/no_overflow";
+                    // if !std::path::Path::new(no_overflow_dir).exists() {
+                    //     std::fs::create_dir_all(no_overflow_dir).unwrap();
+                    // }
+                    // let filepath = format!(
+                    //     "{}/{}_batch_{}_{:.2}.json",
+                    //     no_overflow_dir, dataset_name, b, accuracy
+                    // );
+                    // best_model.save_to_file(&filepath);
+
+                    // let overflow_dir = "./src/comp_free/test_batch_models/overflow";
+                    // if !std::path::Path::new(overflow_dir).exists() {
+                    //     std::fs::create_dir_all(overflow_dir).unwrap();
+                    // }
+                    // let filepath_overflow = format!(
+                    //     "{}/{}_batch_{}_{:.2}.json",
+                    //     overflow_dir, dataset_name, b, accuracy_with_overflow
+                    // );
+                    // best_model_with_overflow.save_to_file(&filepath_overflow);
+                }
+            }
         }
     }
 }

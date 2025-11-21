@@ -30,3 +30,4 @@ csv = "1.1.0"
 revolut = { git = "https://github.com/sofianeazogagh/revoLUT.git", branch = "main" }
 indicatif = "0.17.0"
 clap = { version = "4.2", features = ["derive"] }
+regex = "1.11.1"

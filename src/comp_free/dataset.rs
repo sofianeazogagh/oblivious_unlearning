@@ -1,14 +1,14 @@
 use csv;
+use rand::rngs::StdRng;
 use rand::seq::{index::sample, SliceRandom};
 use rand::Rng;
+use rand::SeedableRng;
 use revolut::{Context, PrivateKey, LUT};
 use std::vec;
 use tfhe::{
     core_crypto::prelude::{GlweCiphertext, LweCiphertext},
     shortint::parameters::*,
 };
-use rand::rngs::StdRng;
-use rand::SeedableRng;
 
 use super::*;
 
@@ -88,7 +88,9 @@ impl ClearDataset {
     }
 
     pub fn split(&self, train: f64) -> (ClearDataset, ClearDataset) {
-        let mut rng = rand::thread_rng();
+        let seed = rand::random::<u64>();
+        println!("Seed used for splitting: {}", seed);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         let n = self.records.len();
         let n_train = (train * n as f64) as u64;
         let mut train_indices = Vec::new();
@@ -99,7 +101,7 @@ impl ClearDataset {
             if !train_indices.contains(&idx) {
                 train_indices.push(idx);
             }
-        }  
+        }
 
         for i in 0..n {
             if !train_indices.contains(&i) {
@@ -133,6 +135,23 @@ impl ClearDataset {
         };
 
         (train_dataset, test_dataset)
+    }
+
+    pub fn extract_batches(&self, batch_size: usize) -> Vec<ClearDataset> {
+        let mut batches = Vec::new();
+        let num_batches = self.records.len() / batch_size;
+        for i in 0..num_batches {
+            let batch = self.records[i * batch_size..(i + 1) * batch_size].to_vec();
+            let clear_dataset = Self {
+                records: batch,
+                max_features: self.max_features,
+                n_classes: self.n_classes,
+                f: self.f,
+                n: batch_size as u64,
+            };
+            batches.push(clear_dataset);
+        }
+        batches
     }
 }
 
@@ -250,10 +269,6 @@ impl EncryptedDataset {
                 ctx,
             ));
             f = record_vec.len() as u64;
-        }
-
-        if f > ctx.full_message_modulus() as u64 {
-            panic!("Number of features exceeds the modulus");
         }
 
         Self {

@@ -307,7 +307,7 @@ impl Forest {
 }
 
 impl ClearTree {
-    pub fn from_json(json_data: &Value, ctx: &Context, public_key: &PublicKey) -> Self {
+    pub fn from_json(json_data: &Value) -> Self {
         let root = ClearRoot {
             threshold: json_data["root"]["threshold"].as_u64().unwrap(),
             feature_index: json_data["root"]["index"].as_u64().unwrap(),
@@ -402,7 +402,7 @@ impl ClearTree {
 }
 
 impl ClearForest {
-    pub fn load_from_file(filepath: &str, ctx: &Context, public_key: &PublicKey) -> Self {
+    pub fn load_from_file(filepath: &str) -> Self {
         let mut file = File::open(filepath).expect("Unable to open file");
         let mut json_string = String::new();
         file.read_to_string(&mut json_string)
@@ -413,7 +413,7 @@ impl ClearForest {
             .as_array()
             .unwrap()
             .iter()
-            .map(|tree_json| ClearTree::from_json(tree_json, ctx, public_key))
+            .map(|tree_json| ClearTree::from_json(tree_json))
             .collect();
 
         ClearForest { trees }
@@ -511,7 +511,7 @@ mod tests {
         let ctx = Context::from(PARAM_MESSAGE_4_CARRY_0);
         let private_key = key(ctx.parameters());
         let public_key = &private_key.public_key;
-        let clear_forest = ClearForest::load_from_file(filepath, &ctx, &public_key);
+        let clear_forest = ClearForest::load_from_file(filepath);
 
         let forest = Forest::load_from_file(filepath, &ctx, public_key);
 
