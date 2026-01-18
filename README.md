@@ -1,8 +1,5 @@
-# PROBONITE (Private One Branch Only Non-Interactive Decision Tree Evaluation)
+# Oblivious (Un)Learning of Extreremly Randomized Trees using TFHE
 
-This repository allows you to execute a proof of concept of [PROBONITE](https://dl.acm.org/doi/pdf/10.1145/3560827.3563377) using the shortint module from the tfhe-rs library.
-
-Disclaimer: This proof of concept has not been applied to any dataset yet. You can simply choose the depth of the tree and the precision bits you want (up to 4 bits).
 
 ## Dependencies 
 

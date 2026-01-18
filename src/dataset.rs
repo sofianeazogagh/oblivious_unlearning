@@ -1,89 +1,163 @@
 use csv;
-use std::vec;
-
-//  import Query from probonite.rs
-use crate::probonite::Query;
+use rand::rngs::StdRng;
 use rand::seq::{index::sample, SliceRandom};
-
-use crate::clear_model::ClearDataset;
+use rand::Rng;
+use rand::SeedableRng;
 use revolut::{Context, PrivateKey, LUT};
-use tfhe::{core_crypto::prelude::LweCiphertext, shortint::parameters::*};
-type LWE = LweCiphertext<Vec<u64>>;
+use std::vec;
+use tfhe::{
+    core_crypto::prelude::{GlweCiphertext, LweCiphertext},
+    shortint::parameters::*,
+};
 
-pub struct EncryptedDataset {
-    pub records: Vec<Query>,
+use super::*;
+
+#[derive(Clone)]
+pub struct ClearSample {
+    pub features: Vec<u64>,
+    pub class: u64,
+}
+
+impl ClearSample {
+    pub fn print(&self) {
+        print!("\n([");
+        for feature in &self.features {
+            print!("{},", feature);
+        }
+        print!("],{})", self.class);
+    }
+}
+
+#[derive(Clone)]
+pub struct ClearDataset {
+    pub records: Vec<ClearSample>,
+    pub max_features: u64,
+    pub n_classes: u64,
     pub f: u64,
     pub n: u64,
 }
 
-impl EncryptedDataset {
-    pub fn from_file(filepath: String, private_key: &PrivateKey, ctx: &mut Context) -> Self {
-        let mut rdr = csv::Reader::from_path(filepath).unwrap();
+impl ClearDataset {
+    pub fn from_file(filepath: String) -> Self {
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .from_path(filepath)
+            .unwrap();
         let mut records = Vec::new();
-        let mut f = 0;
         let mut n = 0;
+
+        let mut max = std::u64::MIN;
+        let mut classes = Vec::new();
 
         for result in rdr.records() {
             let record = result.unwrap();
-            let mut label: u64 = 0;
             let mut record_vec = Vec::new();
+            let mut class: u64 = 0;
+
             for (i, field) in record.iter().enumerate() {
+                let value = field.parse::<u64>().unwrap();
+
                 if i == record.len() - 1 {
-                    label = field.parse::<u64>().unwrap();
+                    class = value as u64;
+                    if !classes.contains(&class) {
+                        classes.push(class);
+                    }
                 } else {
-                    record_vec.push(field.parse::<u64>().unwrap());
+                    record_vec.push(value);
+                }
+
+                if value > max {
+                    max = value;
                 }
             }
-            records.push(Query::make_query(&record_vec, &label, private_key, ctx));
-            n += 1;
-            f = record_vec.len() as u64;
+            records.push(ClearSample {
+                features: record_vec,
+                class,
+            });
         }
 
-        if f > ctx.full_message_modulus() as u64 {
-            panic!("Number of features exceeds the modulus");
-        }
+        let f = records[0].features.len() as u64;
 
-        Self { records, f, n }
+        Self {
+            records,
+            max_features: max,
+            n_classes: classes.len() as u64,
+            f,
+            n,
+        }
     }
 
-    pub fn split(&self, train: f64) -> (EncryptedDataset, EncryptedDataset) {
-        let mut rng = rand::thread_rng();
+    pub fn split(&self, train: f64) -> (ClearDataset, ClearDataset) {
+        let seed = rand::random::<u64>();
+        println!("Seed used for splitting: {}", seed);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         let n = self.records.len();
-        let mut indices: Vec<usize> = (0..n).collect();
-        indices.shuffle(&mut rng);
+        let n_train = (train * n as f64) as u64;
+        let mut train_indices = Vec::new();
+        let mut test_indices = Vec::new();
 
-        let train_size = (n as f64 * train).round() as usize;
-        let train_indices = &indices[0..train_size];
-        let test_indices = &indices[train_size..];
+        while train_indices.len() < n_train as usize {
+            let idx = rng.gen_range(0..n);
+            if !train_indices.contains(&idx) {
+                train_indices.push(idx);
+            }
+        }
 
-        let train_records: Vec<Query> = train_indices
-            .iter()
-            .map(|&i| self.records[i].clone())
-            .collect();
-        let test_records: Vec<Query> = test_indices
-            .iter()
-            .map(|&i| self.records[i].clone())
-            .collect();
+        for i in 0..n {
+            if !train_indices.contains(&i) {
+                test_indices.push(i);
+            }
+        }
 
-        (
-            EncryptedDataset {
-                records: train_records,
+        let mut train_records = Vec::new();
+        let mut test_records = Vec::new();
+        for idx in train_indices {
+            train_records.push(self.records[idx].clone());
+        }
+        for idx in test_indices {
+            test_records.push(self.records[idx].clone());
+        }
+
+        let train_dataset = ClearDataset {
+            records: train_records,
+            max_features: self.max_features,
+            n_classes: self.n_classes,
+            f: self.f,
+            n: n_train,
+        };
+
+        let test_dataset = ClearDataset {
+            records: test_records,
+            max_features: self.max_features,
+            n_classes: self.n_classes,
+            f: self.f,
+            n: n as u64 - n_train,
+        };
+
+        (train_dataset, test_dataset)
+    }
+
+    pub fn extract_batches(&self, batch_size: usize) -> Vec<ClearDataset> {
+        let mut batches = Vec::new();
+        let num_batches = self.records.len() / batch_size;
+        for i in 0..num_batches {
+            let batch = self.records[i * batch_size..(i + 1) * batch_size].to_vec();
+            let clear_dataset = Self {
+                records: batch,
+                max_features: self.max_features,
+                n_classes: self.n_classes,
                 f: self.f,
-                n: train_size as u64,
-            },
-            EncryptedDataset {
-                records: test_records,
-                f: self.f,
-                n: (n - train_size) as u64,
-            },
-        )
+                n: batch_size as u64,
+            };
+            batches.push(clear_dataset);
+        }
+        batches
     }
 }
 
 pub struct EncryptedSample {
     pub class: Vec<LWE>, // one hot encoded class
-    pub features: LUT,
-    pub n_features: u64,
+    pub features: Vec<RLWE>,
 }
 
 impl EncryptedSample {
@@ -99,23 +173,39 @@ impl EncryptedSample {
         private_key: &PrivateKey,
         ctx: &mut Context,
     ) -> Self {
-        let feature_lut = LUT::from_vec(feature_vector, private_key, ctx);
+        let mut feature_rlwes = Vec::new();
+
+        for feature in feature_vector {
+            let mut vec = Vec::new();
+            for i in 0..ctx.polynomial_size().0 as u64 {
+                if (i < *feature) {
+                    vec.push(0);
+                } else {
+                    vec.push(1);
+                }
+            }
+            feature_rlwes.push(private_key.allocate_and_encrypt_glwe_from_vec(&vec, ctx));
+        }
+
         let one_hot_class = Self::one_hot_encode(class, n_classes);
-        let class_lwes = one_hot_class
-            .iter()
-            .map(|x| private_key.allocate_and_encrypt_lwe(*x, ctx))
-            .collect();
+        let mut vec_class = Vec::new();
+        for i in 0..n_classes {
+            vec_class.push(private_key.allocate_and_encrypt_lwe(one_hot_class[i as usize], ctx));
+        }
         Self {
-            class: class_lwes,
-            features: feature_lut,
-            n_features: feature_vector.len() as u64,
+            class: vec_class,
+            features: feature_rlwes,
         }
     }
 
-    pub fn print(&self, private_key: &PrivateKey, ctx: &Context, n_classes: u64) {
-        print!("(");
-        let features_vec: Vec<u64> = self.features.to_array(private_key, ctx).to_vec();
-        print!("{:?}", &features_vec[..self.n_features as usize]);
+    pub fn print(&self, private_key: &PrivateKey, ctx: &Context) {
+        print!("([");
+        let features_vec: Vec<Vec<u64>> = self
+            .features
+            .iter()
+            .map(|x| private_key.decrypt_and_decode_glwe(x, ctx)[..16].to_vec())
+            .collect();
+        print!("{:?}", &features_vec[..4]);
         print!(", [");
         self.class.iter().for_each(|lwe| {
             print!(", {:?}", private_key.decrypt_lwe(lwe, ctx));
@@ -127,38 +217,42 @@ impl EncryptedSample {
         Self {
             class: self.class.clone(),
             features: self.features.clone(),
-            n_features: self.n_features,
         }
     }
 }
 
-pub struct EncryptedDatasetLut {
+pub struct EncryptedDataset {
     pub records: Vec<EncryptedSample>,
     pub f: u64,
     pub n_classes: u64,
     pub max_features: u64,
 }
 
-impl EncryptedDatasetLut {
+impl EncryptedDataset {
     pub fn from_file(
         filepath: String,
         private_key: &PrivateKey,
         ctx: &mut Context,
         n_classes: u64,
     ) -> Self {
-        let mut rdr = csv::Reader::from_path(filepath).unwrap();
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_path(filepath)
+            .unwrap();
         let mut records = Vec::new();
         let mut f = 0;
         let mut max_features = std::u64::MIN;
 
         for result in rdr.records() {
             let record = result.unwrap();
-            let mut label: u64 = 0;
+            let mut class: u64 = 0;
             let mut record_vec = Vec::new();
             for (i, field) in record.iter().enumerate() {
                 let value = field.parse::<u64>().unwrap();
+
+                // last field is the class
                 if i == record.len() - 1 {
-                    label = value;
+                    class = value;
                 } else {
                     record_vec.push(value);
 
@@ -169,16 +263,12 @@ impl EncryptedDatasetLut {
             }
             records.push(EncryptedSample::make_encrypted_sample(
                 &record_vec,
-                &label,
+                &class,
                 n_classes,
                 private_key,
                 ctx,
             ));
             f = record_vec.len() as u64;
-        }
-
-        if f > ctx.full_message_modulus() as u64 {
-            panic!("Number of features exceeds the modulus");
         }
 
         Self {
@@ -189,7 +279,7 @@ impl EncryptedDatasetLut {
         }
     }
 
-    pub fn split(&self, train: f64) -> (EncryptedDatasetLut, EncryptedDatasetLut) {
+    pub fn split(&self, train: f64) -> (EncryptedDataset, EncryptedDataset) {
         let mut rng = rand::thread_rng();
         let n = self.records.len();
         let mut indices: Vec<usize> = (0..n).collect();
@@ -209,13 +299,13 @@ impl EncryptedDatasetLut {
             .collect();
 
         (
-            EncryptedDatasetLut {
+            EncryptedDataset {
                 records: train_records,
                 f: self.f,
                 n_classes: self.n_classes,
                 max_features: self.max_features,
             },
-            EncryptedDatasetLut {
+            EncryptedDataset {
                 records: test_records,
                 f: self.f,
                 n_classes: self.n_classes,
@@ -254,7 +344,7 @@ impl EncryptedDatasetLut {
 
     pub fn print(&self, private_key: &PrivateKey, ctx: &Context) {
         for record in &self.records {
-            record.print(private_key, ctx, self.n_classes);
+            record.print(private_key, ctx);
         }
     }
 }
