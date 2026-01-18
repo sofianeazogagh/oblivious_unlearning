@@ -6,6 +6,7 @@ use std::time::Instant;
 // ============================================================================
 // Declarations of modules
 // ============================================================================
+mod api;            // API for running standard and hybrid modes
 mod clear;
 mod ctree;
 mod dataset;
@@ -16,6 +17,7 @@ mod utils_maj;      // Extension trait Majority for RevoLUT's PublicKey
 mod utils_serial;   // Serialization methods for Tree and ClearForest
 
 
+use api::{run_hybrid_mode, run_standard_mode};
 use clear::ClearForest;
 use dataset::{ClearDataset, EncryptedDataset};
 use forest::Forest;
@@ -39,47 +41,51 @@ const DEFAULT_NUM_TRIALS_BEST_MODEL: usize = 1;
 pub const NUM_THREADS: usize = 10;
 pub const VERBOSE: bool = true;
 pub const DEBUG: bool = false;
-pub const OBLIVIOUS: bool = true;
+pub const OBLIVIOUS: bool = true; // oblivious train/unlearn
 pub const SEED: u64 = 1;
 pub const PRE_SEEDED: bool = true;
 
 // ============================================================================
-// Structures de configuration
+// Configuration structures
 // ============================================================================
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Nom du dataset (iris, adult, wine, cancer)
+    /// Dataset name (iris, adult, wine, cancer)
     #[arg(short, long, default_value = "iris")]
     dataset: String,
 
-    /// Nombre d'arbres (valeurs séparées par des virgules, ex: "8,16")
+    /// Number of trees (comma-separated values, e.g., "8,16")
     #[arg(short, long, default_value = "8,16")]
     num_trees: String,
 
-    /// Profondeur des arbres
+    /// Tree depth
     #[arg(short, long, default_value_t = DEFAULT_DEPTH)]
     depth: u64,
 
-    /// Nombre de répétitions/trials
+    /// Number of repetitions/trials
     #[arg(short, long, default_value_t = DEFAULT_NUM_TRIALS)]
     trials: usize,
 
-    /// Pourcentage de split train/test
+    /// Train/test split percentage
     #[arg(long, default_value_t = DEFAULT_SPLIT_PERCENTAGE)]
     split: f64,
 
-    /// Nombre de trials pour trouver le meilleur modèle
+    /// Number of trials to find the best model
     #[arg(long, default_value_t = DEFAULT_NUM_TRIALS_BEST_MODEL)]
     best_model_trials: usize,
 
-    /// Dossier de sortie
+    /// Output directory
     #[arg(long, default_value = FOLDER)]
     output: String,
 
-    /// Mode verbeux
+    /// Verbose mode
     #[arg(short, long)]
     verbose: bool,
+
+    /// Execution mode: "standard" or "hybrid"
+    #[arg(long, default_value = "standard")]
+    mode: String,
 }
 
 #[derive(Debug, Clone)]
@@ -343,15 +349,92 @@ fn main() {
         std::fs::create_dir_all(&args.output).unwrap();
     }
 
-    if args.verbose {
-        println!("Configuration:");
-        println!("  Dataset: {}", args.dataset);
-        println!("  Num trees: {}", args.num_trees);
-        println!("  Depth: {}", args.depth);
-        println!("  Trials: {}", args.trials);
-        println!("  Split: {:.2}", args.split);
-        println!("  Output: {}", args.output);
+    let dataset_config = get_dataset_config(&args.dataset);
+    let dataset_path = format!("data/{}-uci/{}.csv", args.dataset, args.dataset);
+    let dataset = ClearDataset::from_file(dataset_path);
+    let max_features = dataset.max_features;
+
+    let timing = TimingCollector::new();
+
+    // Choisir entre mode standard et hybrid
+    match args.mode.as_str() {
+        "standard" => {
+            if args.verbose {
+                println!("Configuration:");
+                println!("  Mode: standard");
+                println!("  Dataset: {}", args.dataset);
+                println!("  Num trees: {}", args.num_trees);
+                println!("  Depth: {}", args.depth);
+                println!("  Split: {:.2}", args.split);
+                println!("  Output: {}", args.output);
+            }
+
+            // For standard mode, take the first number of trees
+            let num_trees_list = parse_num_trees(&args.num_trees);
+            let num_trees = num_trees_list[0];
+
+            run_standard_mode(
+                &args.dataset,
+                num_trees,
+                args.depth,
+                dataset_config.n_classes,
+                max_features,
+                dataset_config.f,
+                args.best_model_trials,
+                args.split,
+                &args.output,
+                &mut ctx,
+                &private_key,
+                public_key,
+                &timing,
+                args.verbose,
+            );
+        }
+        "hybrid" => {
+            if args.verbose {
+                println!("Configuration:");
+                println!("  Mode: hybrid");
+                println!("  Dataset: {}", args.dataset);
+                println!("  Num trees: {}", args.num_trees);
+                println!("  Depth: {}", args.depth);
+                println!("  Split D_0/D_1: {:.2}", args.split);
+                println!("  Output: {}", args.output);
+            }
+
+            // For hybrid mode, take the first number of trees
+            let num_trees_list = parse_num_trees(&args.num_trees);
+            let num_trees = num_trees_list[0];
+
+            // k = number of candidates for Gini split (default 3)
+            let k = 3;
+            // Split D_0/D_1: use args.split for D_0, remainder is D_1
+            // Train/test split in D_0: 0.8 by default
+            let split_train_test = 0.8;
+
+            run_hybrid_mode(
+                &args.dataset,
+                num_trees,
+                args.depth,
+                dataset_config.n_classes,
+                max_features,
+                dataset_config.f,
+                k,
+                args.split, // pourcentage pour D_0
+                split_train_test,
+                &args.output,
+                &mut ctx,
+                &private_key,
+                public_key,
+                &timing,
+                args.verbose,
+            );
+        }
+        _ => {
+            eprintln!("Unknown mode: {}. Use 'standard' or 'hybrid'.", args.mode);
+            std::process::exit(1);
+        }
     }
 
-    run_benchmark(&args, &mut ctx, &private_key, public_key);
+    // Display timing statistics
+    timing.print_summary();
 }
