@@ -71,7 +71,7 @@ pub fn run_standard_mode(
         std::fs::create_dir_all(&dir_path).expect("Failed to create directory");
     }
     let export_path = format!(
-        "{}/best_{}_{}_{}_{:.2}_exported.json",
+        "{}standard_{}_{}_{}_{:.2}.json",
         dir_path, dataset_name, num_trees, depth, best_accuracy
     );
     exported_forest.save_to_file(&export_path);
@@ -211,7 +211,7 @@ pub fn run_hybrid_mode(
         std::fs::create_dir_all(&dir_path).expect("Failed to create directory");
     }
     let export_path = format!(
-        "{}/hybrid_{}_{}_{}_{:.2}_with_counts.json",
+        "{}hybrid_{}_{}_{}_{:.2}.json",
         dir_path, dataset_name, num_trees, depth, accuracy_d0
     );
     forest_clear.save_to_file(&export_path);
@@ -277,5 +277,118 @@ pub fn run_hybrid_mode(
     println!("Real accuracy after D_1: {:.4}", real_accuracy_after_d1);
     println!("Abstention: {}", abstention);
     println!("Evolution: {:.4}", accuracy_after_d1 - accuracy_d0);
+}
+
+/// Oblivious training/unlearning mode: loads a pre-trained forest and a CSV file,
+/// then trains or unlearns based on the multiplier (1 for training, 2 for unlearning)
+pub fn run_oblivious_mode(
+    forest_path: &str,
+    csv_path: &str,
+    operation: &str, // "train" or "unlearn"
+    output_dir: &str,
+    ctx: &mut Context,
+    private_key: &PrivateKey,
+    public_key: &PublicKey,
+    timing: &TimingCollector,
+    verbose: bool,
+) {
+    if verbose {
+        println!("========== Oblivious {} Mode ==========", operation);
+        println!("Forest path: {}", forest_path);
+        println!("CSV path: {}", csv_path);
+    }
+
+    // Determine multiplier based on operation
+    let multiplier = match operation {
+        "train" => 1,
+        "unlearn" => 2,
+        _ => {
+            eprintln!("Unknown operation: {}. Use 'train' or 'unlearn'.", operation);
+            std::process::exit(1);
+        }
+    };
+
+    if verbose {
+        println!("Multiplier: {} ({} = multiply one-hot label by {})", 
+                 multiplier, operation, multiplier);
+    }
+
+    // 1. Load the pre-trained forest
+    if verbose {
+        println!("\n[1/3] Loading pre-trained forest...");
+    }
+    let mut forest = Forest::new_from_file(forest_path, public_key, ctx);
+    
+    // Get n_classes from the forest
+    let n_classes = forest.trees[0].n_classes;
+    if verbose {
+        println!("Forest loaded: {} trees, depth {}, {} classes", 
+                 forest.trees.len(), 
+                 forest.trees[0].depth,
+                 n_classes);
+    }
+
+    // 2. Load and encrypt the CSV data with the appropriate multiplier
+    if verbose {
+        println!("\n[2/3] Loading and encrypting CSV data (multiplier: {})...", multiplier);
+    }
+    let dataset_encrypted = EncryptedDataset::from_file_with_multiplier(
+        csv_path.to_string(),
+        private_key,
+        ctx,
+        n_classes,
+        multiplier,
+    );
+    
+    if verbose {
+        println!("Loaded {} samples from CSV", dataset_encrypted.records.len());
+    }
+
+    // 3. Train/unlearn on the encrypted data
+    if verbose {
+        println!("\n[3/3] {}ing on encrypted data...", operation);
+    }
+    
+    time_operation!(timing, &format!("{} forest", operation), {
+        forest.train(&dataset_encrypted, public_key, ctx, timing);
+    });
+
+    // 4. Save the updated forest
+    if verbose {
+        println!("\n[4/4] Saving updated forest...");
+    }
+    
+    // Create output directory if it doesn't exist
+    if !std::path::Path::new(output_dir).exists() {
+        std::fs::create_dir_all(output_dir).expect("Failed to create output directory");
+    }
+    
+    // Generate a meaningful filename
+    let csv_filename = std::path::Path::new(csv_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("data");
+    
+    let forest_filename = std::path::Path::new(forest_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("forest");
+    
+    let output_path = format!("{}/forest_{}_{}_{}.json", 
+                             output_dir, 
+                             operation,
+                             forest_filename,
+                             csv_filename);
+    
+    forest.save_to_file(&output_path, private_key, ctx);
+    
+    if verbose {
+        println!("Updated forest saved to: {}", output_path);
+    }
+
+    println!("\n========== Results ==========");
+    println!("Operation: {}", operation);
+    println!("Samples processed: {}", dataset_encrypted.records.len());
+    println!("Updated forest saved to: {}", output_path);
 }
 

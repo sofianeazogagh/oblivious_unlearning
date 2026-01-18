@@ -14,7 +14,7 @@ use crate::dataset::EncryptedDataset;
 use crate::dataset::EncryptedSample;
 use crate::timing::TimingCollector;
 use crate::{ByteLWE, Context, LUT, LWE, PublicKey, PrivateKey, RLWE};
-use crate::{DEBUG, OBLIVIOUS};
+use crate::{DEBUG, FAST_TRAINING};
 use crate::time_operation;
 
 
@@ -154,7 +154,9 @@ impl Tree {
         public_key: &PublicKey,
         ctx: &Context,
     ) {
-        if !OBLIVIOUS {
+
+        // If FAST_TRAINING is true, we use a blind increment instead of an oblivious increment/decrement
+        if FAST_TRAINING {
             for i in 0..self.n_classes {
                 self.leaves_lut[i as usize].class.blind_array_maybe_inc(
                     &selector,

@@ -17,7 +17,7 @@ mod utils_maj;      // Extension trait Majority for RevoLUT's PublicKey
 mod utils_serial;   // Serialization methods for Tree and ClearForest
 
 
-use api::{run_hybrid_mode, run_standard_mode};
+use api::{run_hybrid_mode, run_oblivious_mode, run_standard_mode};
 use clear::ClearForest;
 use dataset::{ClearDataset, EncryptedDataset};
 use forest::Forest;
@@ -41,7 +41,7 @@ const DEFAULT_NUM_TRIALS_BEST_MODEL: usize = 1;
 pub const NUM_THREADS: usize = 10;
 pub const VERBOSE: bool = true;
 pub const DEBUG: bool = false;
-pub const OBLIVIOUS: bool = true; // oblivious train/unlearn
+pub const FAST_TRAINING: bool = false; // must be false for oblivious mode
 pub const SEED: u64 = 1;
 pub const PRE_SEEDED: bool = true;
 
@@ -83,9 +83,21 @@ struct Args {
     #[arg(short, long)]
     verbose: bool,
 
-    /// Execution mode: "standard" or "hybrid"
+    /// Execution mode: "standard", "hybrid", or "oblivious"
     #[arg(long, default_value = "standard")]
     mode: String,
+
+    /// Path to pre-trained forest file (required for oblivious mode)
+    #[arg(long)]
+    forest_path: Option<String>,
+
+    /// Path to CSV file for training/unlearning (required for oblivious mode)
+    #[arg(long)]
+    csv_path: Option<String>,
+
+    /// Operation for oblivious mode: "train" or "unlearn"
+    #[arg(long, default_value = "train")]
+    operation: String,
 }
 
 #[derive(Debug, Clone)]
@@ -429,8 +441,48 @@ fn main() {
                 args.verbose,
             );
         }
+        "oblivious" => {
+            if args.verbose {
+                println!("Configuration:");
+                println!("  Mode: oblivious");
+                println!("  Operation: {}", args.operation);
+            }
+
+            // Check required arguments
+            let forest_path = args.forest_path.as_ref().ok_or_else(|| {
+                eprintln!("Error: --forest-path is required for oblivious mode");
+                std::process::exit(1);
+            }).unwrap();
+
+            let csv_path = args.csv_path.as_ref().ok_or_else(|| {
+                eprintln!("Error: --csv-path is required for oblivious mode");
+                std::process::exit(1);
+            }).unwrap();
+
+            if !std::path::Path::new(forest_path).exists() {
+                eprintln!("Error: Forest file not found: {}", forest_path);
+                std::process::exit(1);
+            }
+
+            if !std::path::Path::new(csv_path).exists() {
+                eprintln!("Error: CSV file not found: {}", csv_path);
+                std::process::exit(1);
+            }
+
+            run_oblivious_mode(
+                forest_path,
+                csv_path,
+                &args.operation,
+                &args.output,
+                &mut ctx,
+                &private_key,
+                public_key,
+                &timing,
+                args.verbose,
+            );
+        }
         _ => {
-            eprintln!("Unknown mode: {}. Use 'standard' or 'hybrid'.", args.mode);
+            eprintln!("Unknown mode: {}. Use 'standard', 'hybrid', or 'oblivious'.", args.mode);
             std::process::exit(1);
         }
     }

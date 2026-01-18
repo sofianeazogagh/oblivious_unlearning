@@ -173,6 +173,24 @@ impl EncryptedSample {
         private_key: &PrivateKey,
         ctx: &mut Context,
     ) -> Self {
+        Self::make_encrypted_sample_with_multiplier(
+            feature_vector,
+            class,
+            n_classes,
+            1, // default multiplier for training
+            private_key,
+            ctx,
+        )
+    }
+
+    pub fn make_encrypted_sample_with_multiplier(
+        feature_vector: &Vec<u64>,
+        class: &u64,
+        n_classes: u64,
+        multiplier: u64, // 1 for training, 2 for unlearning
+        private_key: &PrivateKey,
+        ctx: &mut Context,
+    ) -> Self {
         let mut feature_rlwes = Vec::new();
 
         for feature in feature_vector {
@@ -190,7 +208,9 @@ impl EncryptedSample {
         let one_hot_class = Self::one_hot_encode(class, n_classes);
         let mut vec_class = Vec::new();
         for i in 0..n_classes {
-            vec_class.push(private_key.allocate_and_encrypt_lwe(one_hot_class[i as usize], ctx));
+            // Multiply the one-hot encoded value by the multiplier
+            let value = one_hot_class[i as usize] * multiplier;
+            vec_class.push(private_key.allocate_and_encrypt_lwe(value, ctx));
         }
         Self {
             class: vec_class,
@@ -235,6 +255,16 @@ impl EncryptedDataset {
         ctx: &mut Context,
         n_classes: u64,
     ) -> Self {
+        Self::from_file_with_multiplier(filepath, private_key, ctx, n_classes, 1)
+    }
+
+    pub fn from_file_with_multiplier(
+        filepath: String,
+        private_key: &PrivateKey,
+        ctx: &mut Context,
+        n_classes: u64,
+        multiplier: u64, // 1 for training, 2 for unlearning
+    ) -> Self {
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(false)
             .from_path(filepath)
@@ -261,10 +291,11 @@ impl EncryptedDataset {
                     }
                 }
             }
-            records.push(EncryptedSample::make_encrypted_sample(
+            records.push(EncryptedSample::make_encrypted_sample_with_multiplier(
                 &record_vec,
                 &class,
                 n_classes,
+                multiplier,
                 private_key,
                 ctx,
             ));

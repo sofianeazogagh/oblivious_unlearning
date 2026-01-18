@@ -33,7 +33,7 @@ impl Tree {
             })
             .collect();
 
-        // Unpack de LUTs into the Vec of Vec<ByteLWE> : one per class
+        // Unpack of LUTs into the Vec of Vec<ByteLWE> : one per class
         let mut classes = Vec::new();
         for i in 0..self.n_classes {
             classes.push(
