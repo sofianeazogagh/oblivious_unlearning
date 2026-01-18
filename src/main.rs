@@ -29,7 +29,7 @@ use revolut::{Context, PrivateKey, PublicKey, key, LUT, LWE, radix::ByteLWE, rad
 
 type RLWE = crate::GLWE;
 
-pub const FOLDER: &str = "./src/export/";
+pub const FOLDER: &str = "./export/";
 const DEFAULT_NUM_TRIALS: usize = 10;
 const DEFAULT_DEPTH: u64 = 4;
 const DEFAULT_SPLIT_PERCENTAGE: f64 = 0.8;
