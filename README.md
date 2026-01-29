@@ -34,10 +34,10 @@ The program supports three execution modes: **standard**, **hybrid** and **obliv
 The three execution modes supported by this program are as follows:
 
 - **Standard Mode**:  
-  In this mode, the forest of extremely randomized trees (ERTs) is fully trained on unencrypted (clear) data. After training, the best-performing model is selected (optionally using multiple trials), exported (without count data), and is retrained on encrypted data. This mode is useful for benchmarking and verifying correctness.
+  In this mode, the forest of extremely randomized trees (ERTs) is fully trained on unencrypted (clear) data. After training, the best-performing model is selected (optionally using multiple trials), exported (without count leaves), and is retrained on encrypted data. This mode is useful for benchmarking and verifying correctness.
 
 - **Hybrid Mode**:  
-  The dataset is split into two subsets, D_0 and D_1. The ERTs are first trained on D_0 in the clear, using the Gini-index criterion, and counts for classes at each leaf are recorded (exported with the model). Then, additional training (or updating) can be done using encrypted data from D_1.
+  The dataset is split into two subsets, D_0 and D_1. The ERTs are first trained on D_0 in the clear using the Gini-index criterion, and counts for classes at each leaf are recorded (exported with the model). Then, additional training (or updating) can be done using encrypted data from D_1.
 
 - **Oblivious Mode (Oblivious Training/Unlearning)**:  
   This mode allows you to perform *oblivious* training or unlearning of the forest on encrypted data from a provided CSV file. The same function is used for both operations; labels are encoded differently to indicate whether you are training (add counts) or unlearning (remove counts).
